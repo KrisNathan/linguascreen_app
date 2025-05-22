@@ -12,16 +12,17 @@ class ActivationOverlay extends StatelessWidget {
         onTap: () async {
           print('Activate!');
         },
-        child: Container(
+        child: SizedBox(
           height: MediaQuery.of(context).size.height,
-          decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                const FlutterLogo(),
-              ],
+          child: Card(
+            elevation: 1.0,
+            shape: CircleBorder(),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [const FlutterLogo()],
+              ),
             ),
           ),
         ),
