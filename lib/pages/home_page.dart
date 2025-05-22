@@ -38,6 +38,31 @@ class _HomePageState extends State<HomePage> {
               Container(), // empty to ensure material banner doesnt make it look ugly
             ],
           ),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Column(children: [Text('Words Learned'), Text('100')]),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Column(children: [Text('Words Learned'), Text('100')]),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
           Text('Is permission granted: $isPermissionGranted'),
           TextButton(
             onPressed: () async {
