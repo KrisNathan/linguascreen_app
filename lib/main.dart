@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:overlay_test/home_page_widget.dart';
+import 'package:overlay_test/app.dart';
 import 'package:overlay_test/overlay/activation_overlay.dart';
 
 void main() {
@@ -28,6 +28,13 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(home: HomePageWidget());
+    return MaterialApp(
+      title: 'LinguaScreen',
+      home: AppWidget(),
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+      ),
+    );
   }
 }
