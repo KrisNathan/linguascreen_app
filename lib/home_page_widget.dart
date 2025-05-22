@@ -48,9 +48,9 @@ class _HomePageWidgetState extends State<HomePageWidget> {
                   overlayContent: 'Overlay Enabled',
                   flag: OverlayFlag.defaultFlag,
                   visibility: NotificationVisibility.visibilityPublic,
-                  positionGravity: PositionGravity.auto,
-                  height: (MediaQuery.of(context).size.height * 0.6).toInt(),
-                  width: WindowSize.matchParent,
+                  positionGravity: PositionGravity.none,
+                  height: 150,
+                  width: 150,
                   startPosition: const OverlayPosition(0, -259),
                 );
               },

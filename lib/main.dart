@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:overlay_test/home_page_widget.dart';
-import 'package:overlay_test/overlay/true_caller_overlay.dart';
+import 'package:overlay_test/overlay/activation_overlay.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -13,7 +13,7 @@ void overlayMain() {
   runApp(
     const MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: TrueCallerOverlay(),
+      home: ActivationOverlay(),
     ),
   );
 }
