@@ -1,3 +1,4 @@
+import 'dart:developer';
 import 'package:flutter/material.dart';
 
 class ActivationOverlay extends StatelessWidget {
@@ -10,7 +11,7 @@ class ActivationOverlay extends StatelessWidget {
       elevation: 0.0,
       child: GestureDetector(
         onTap: () async {
-          print('Activate!');
+          log('Activate!');
         },
         child: SizedBox(
           height: MediaQuery.of(context).size.height,
