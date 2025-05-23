@@ -12,6 +12,22 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   bool isPermissionGranted = false;
+  bool isOverlayEnabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    FlutterOverlayWindow.isPermissionGranted().then(
+      (bool value) => setState(() {
+        isPermissionGranted = value;
+      }),
+    );
+    FlutterOverlayWindow.isActive().then(
+      (bool value) => setState(() {
+        isOverlayEnabled = value;
+      }),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,41 +43,56 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           SizedBox(height: 8.0),
-          Card.filled(
-            color: Theme.of(context).colorScheme.primaryContainer,
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                children: [
-                  Row(
+          !isPermissionGranted
+              ? Card.filled(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
                     children: [
-                      const Icon(Icons.warning),
-                      SizedBox(width: 16.0),
-                      Expanded(
-                        child: Text(
-                          'Some permissions are not granted. LinguaScreen requires permissions to show shortcut button above other apps.',
-                          style: TextStyle(),
-                        ),
+                      Row(
+                        children: [
+                          const Icon(Icons.warning),
+                          SizedBox(width: 16.0),
+                          Expanded(
+                            child: Text(
+                              'Some permissions are not granted. LinguaScreen requires permissions to show shortcut button above other apps.',
+                              style: TextStyle(),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          Spacer(),
+                          TextButton(
+                            onPressed: () async {
+                              final bool? res =
+                                  await FlutterOverlayWindow.requestPermission();
+                              log('status: $res');
+                            },
+                            child: const Text(
+                              'PERMISSIONS',
+                              style: TextStyle(),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () async {
+                              bool isGranted =
+                                  await FlutterOverlayWindow.isPermissionGranted();
+                              setState(() {
+                                isPermissionGranted = isGranted;
+                              });
+                            },
+                            icon: const Icon(Icons.refresh),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                  Row(
-                    children: [
-                      Spacer(),
-                      TextButton(
-                        onPressed: () async {
-                          final bool? res =
-                              await FlutterOverlayWindow.requestPermission();
-                          log('status: $res');
-                        },
-                        child: const Text('PERMISSIONS', style: TextStyle()),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
+                ),
+              )
+              : SizedBox(),
           SizedBox(height: 8.0),
           Card.filled(
             color: Theme.of(context).colorScheme.primaryContainer,
@@ -71,7 +102,41 @@ class _HomePageState extends State<HomePage> {
                 children: [
                   Text('Shortcut Overlay'),
                   Spacer(),
-                  Switch(value: true, onChanged: (bool value) {}),
+                  Switch(
+                    value: isOverlayEnabled,
+                    onChanged:
+                        isPermissionGranted
+                            ? (bool value) async {
+                              if (!(await FlutterOverlayWindow.isPermissionGranted())) {
+                                setState(() {
+                                  isPermissionGranted = false;
+                                });
+                              }
+                              if (await FlutterOverlayWindow.isActive()) {
+                                await FlutterOverlayWindow.closeOverlay();
+                                setState(() {
+                                  isOverlayEnabled = false;
+                                });
+                              } else {
+                                await FlutterOverlayWindow.showOverlay(
+                                  enableDrag: true,
+                                  overlayTitle: 'Overlay',
+                                  overlayContent: 'Overlay Enabled',
+                                  flag: OverlayFlag.defaultFlag,
+                                  visibility:
+                                      NotificationVisibility.visibilityPublic,
+                                  positionGravity: PositionGravity.none,
+                                  height: 150,
+                                  width: 150,
+                                  startPosition: const OverlayPosition(0, -259),
+                                );
+                                setState(() {
+                                  isOverlayEnabled = true;
+                                });
+                              }
+                            }
+                            : null,
+                  ),
                 ],
               ),
             ),
@@ -118,6 +183,7 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
 
+          // Text('DEBUG'),
           // Text('Is permission granted: $isPermissionGranted'),
           // TextButton(
           //   onPressed: () async {
