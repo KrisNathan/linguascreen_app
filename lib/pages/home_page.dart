@@ -27,7 +27,8 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           SizedBox(height: 8.0),
-          Card(
+          Card.filled(
+            color: Theme.of(context).colorScheme.primaryContainer,
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
@@ -62,7 +63,8 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           SizedBox(height: 8.0),
-          Card(
+          Card.filled(
+            color: Theme.of(context).colorScheme.primaryContainer,
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Row(
@@ -79,7 +81,8 @@ class _HomePageState extends State<HomePage> {
           Row(
             children: [
               Expanded(
-                child: Card(
+                child: Card.filled(
+                  color: Theme.of(context).colorScheme.primaryContainer,
                   child: Padding(
                     padding: const EdgeInsets.all(16.0),
                     child: Column(
@@ -96,7 +99,8 @@ class _HomePageState extends State<HomePage> {
               ),
               SizedBox(width: 8.0),
               Expanded(
-                child: Card(
+                child: Card.filled(
+                  color: Theme.of(context).colorScheme.primaryContainer,
                   child: Padding(
                     padding: const EdgeInsets.all(16.0),
                     child: Column(
@@ -114,49 +118,49 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
 
-          Text('Is permission granted: $isPermissionGranted'),
-          TextButton(
-            onPressed: () async {
-              final status = await FlutterOverlayWindow.isPermissionGranted();
-              log('status; $status');
-              setState(() {
-                isPermissionGranted = status;
-              });
-            },
-            child: Text('Check Permission'),
-          ),
-          TextButton(
-            onPressed: () async {
-              final bool? res = await FlutterOverlayWindow.requestPermission();
-              log('status: $res');
-            },
-            child: Text('Request Permission'),
-          ),
-          TextButton(
-            onPressed: () async {
-              if (await FlutterOverlayWindow.isActive()) return;
-              await FlutterOverlayWindow.showOverlay(
-                enableDrag: true,
-                overlayTitle: 'Overlay',
-                overlayContent: 'Overlay Enabled',
-                flag: OverlayFlag.defaultFlag,
-                visibility: NotificationVisibility.visibilityPublic,
-                positionGravity: PositionGravity.none,
-                height: 150,
-                width: 150,
-                startPosition: const OverlayPosition(0, -259),
-              );
-            },
-            child: Text('Show Overlay'),
-          ),
-          TextButton(
-            onPressed: () async {
-              FlutterOverlayWindow.closeOverlay().then(
-                (value) => log('Stopped $value'),
-              );
-            },
-            child: Text('Close Overlay'),
-          ),
+          // Text('Is permission granted: $isPermissionGranted'),
+          // TextButton(
+          //   onPressed: () async {
+          //     final status = await FlutterOverlayWindow.isPermissionGranted();
+          //     log('status; $status');
+          //     setState(() {
+          //       isPermissionGranted = status;
+          //     });
+          //   },
+          //   child: Text('Check Permission'),
+          // ),
+          // TextButton(
+          //   onPressed: () async {
+          //     final bool? res = await FlutterOverlayWindow.requestPermission();
+          //     log('status: $res');
+          //   },
+          //   child: Text('Request Permission'),
+          // ),
+          // TextButton(
+          //   onPressed: () async {
+          //     if (await FlutterOverlayWindow.isActive()) return;
+          //     await FlutterOverlayWindow.showOverlay(
+          //       enableDrag: true,
+          //       overlayTitle: 'Overlay',
+          //       overlayContent: 'Overlay Enabled',
+          //       flag: OverlayFlag.defaultFlag,
+          //       visibility: NotificationVisibility.visibilityPublic,
+          //       positionGravity: PositionGravity.none,
+          //       height: 150,
+          //       width: 150,
+          //       startPosition: const OverlayPosition(0, -259),
+          //     );
+          //   },
+          //   child: Text('Show Overlay'),
+          // ),
+          // TextButton(
+          //   onPressed: () async {
+          //     FlutterOverlayWindow.closeOverlay().then(
+          //       (value) => log('Stopped $value'),
+          //     );
+          //   },
+          //   child: Text('Close Overlay'),
+          // ),
         ],
       ),
     );

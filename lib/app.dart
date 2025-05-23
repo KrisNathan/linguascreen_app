@@ -8,7 +8,7 @@ class AppWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('LinguaScreen')),
-      body: Container(color: Theme.of(context).colorScheme.primaryContainer, child: HomePage()),
+      body: HomePage(),
 
       bottomNavigationBar: NavigationBar(
         onDestinationSelected: (int index) {},
