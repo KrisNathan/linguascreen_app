@@ -44,6 +44,9 @@ class MainActivity: FlutterActivity() {
 
         methodChannel.setMethodCallHandler { call, result ->
             when (call.method) {
+                "bringAppToForeground" -> {
+                    bringAppToForeground(call, result)
+                }
                 "handleSumMethod" -> { // Renamed method
                     handleSumMethod(call, result)
                 }
@@ -100,9 +103,27 @@ class MainActivity: FlutterActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val targetRoute = intent.getStringExtra("targetRoute")
+        if (targetRoute != null) {
+            methodChannel.invokeMethod("navigateToPage", targetRoute)
+        }
+    }
+
     private fun requestScreenCapturePermission() {
         val captureIntent = mediaProjectionManager.createScreenCaptureIntent()
         startActivityForResult(captureIntent, SCREEN_CAPTURE_REQUEST_CODE)
+    }
+
+    private fun bringAppToForeground(call: MethodCall, result: MethodChannel.Result) {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            action = Intent.ACTION_MAIN
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        startActivity(intent)
+        result.success(true)
     }
 
     private fun handleSumMethod(call: MethodCall, result: MethodChannel.Result) {
