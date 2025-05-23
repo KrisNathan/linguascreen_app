@@ -15,52 +15,103 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
       child: Column(
         children: [
-          MaterialBanner(
-            margin: EdgeInsets.all(16.0),
-            content: const Text(
-              'Some permissions are not granted. LinguaScreen requires permissions to show shortcut button above other apps.',
-              style: TextStyle(),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Ready to continue learning?',
+              style: TextStyle(fontSize: 32.0),
             ),
-            leading: const Icon(Icons.warning),
-            // backgroundColor: Colors.grey[850],
-            actions: [
-              TextButton(
-                onPressed: () async {
-                  final bool? res =
-                      await FlutterOverlayWindow.requestPermission();
-                  log('status: $res');
-                },
-                child: const Text('PERMISSIONS', style: TextStyle()),
-              ),
-              Container(), // empty to ensure material banner doesnt make it look ugly
-            ],
           ),
-
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Column(children: [Text('Words Learned'), Text('100')]),
-                    ),
+          SizedBox(height: 8.0),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.warning),
+                      SizedBox(width: 16.0),
+                      Expanded(
+                        child: Text(
+                          'Some permissions are not granted. LinguaScreen requires permissions to show shortcut button above other apps.',
+                          style: TextStyle(),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                Expanded(
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Column(children: [Text('Words Learned'), Text('100')]),
-                    ),
+                  Row(
+                    children: [
+                      Spacer(),
+                      TextButton(
+                        onPressed: () async {
+                          final bool? res =
+                              await FlutterOverlayWindow.requestPermission();
+                          log('status: $res');
+                        },
+                        child: const Text('PERMISSIONS', style: TextStyle()),
+                      ),
+                    ],
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
+          ),
+          SizedBox(height: 8.0),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                children: [
+                  Text('Shortcut Overlay'),
+                  Spacer(),
+                  Switch(value: true, onChanged: (bool value) {}),
+                ],
+              ),
+            ),
+          ),
+          SizedBox(height: 8.0),
+          // Learning Summary
+          Row(
+            children: [
+              Expanded(
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      children: [
+                        Text(
+                          'Words Learned',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        Text('100'),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(width: 8.0),
+              Expanded(
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      children: [
+                        Text(
+                          'Words Reviewed',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        Text('10'),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
 
           Text('Is permission granted: $isPermissionGranted'),
