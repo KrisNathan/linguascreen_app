@@ -1,18 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:overlay_test/pages/home_page.dart';
 
-class AppWidget extends StatelessWidget {
+class AppWidget extends StatefulWidget {
   const AppWidget({super.key});
+
+  @override
+  State<AppWidget> createState() => _AppWidgetState();
+}
+
+List<Widget> pages = [Text('WIP'), HomePage(), Text('WIP')];
+
+class _AppWidgetState extends State<AppWidget> {
+  int _selectedIndex = 1;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('LinguaScreen')),
-      body: HomePage(),
+      body: pages.elementAt(_selectedIndex),
 
       bottomNavigationBar: NavigationBar(
-        onDestinationSelected: (int index) {},
-        selectedIndex: 1,
+        onDestinationSelected: (int index) {
+          setState(() {
+            _selectedIndex = index;
+          });
+        },
+        selectedIndex: _selectedIndex,
         destinations: const <Widget>[
           NavigationDestination(
             selectedIcon: Icon(Icons.book),
