@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:overlay_test/pages/coming_soon_page.dart';
 import 'package:overlay_test/pages/home_page.dart';
 
 class AppWidget extends StatefulWidget {
@@ -8,7 +9,7 @@ class AppWidget extends StatefulWidget {
   State<AppWidget> createState() => _AppWidgetState();
 }
 
-List<Widget> pages = [Text('WIP'), HomePage(), Text('WIP')];
+List<Widget> pages = [ComingSoonPage(), HomePage(), ComingSoonPage()];
 
 class _AppWidgetState extends State<AppWidget> {
   int _selectedIndex = 1;
