@@ -14,25 +14,37 @@ class _ActivationOverlayState extends State<ActivationOverlay> {
   static const String _kPortNameOverlay = 'OVERLAY';
   static const String _kPortNameHome = 'UI';
   final _receivePort = ReceivePort();
-  SendPort? homePort;
-  String? messageFromOverlay;
+  SendPort? _sendPort;
+  String? _messageFromUI;
 
   @override
   void initState() {
     super.initState();
 
-    if (homePort != null) return;
-    final res = IsolateNameServer.registerPortWithName(
+    // unregister existing old port:
+    // dispose() may not be called properly in the previous session.
+    IsolateNameServer.removePortNameMapping(_kPortNameOverlay);
+
+    final portRegistrationRes = IsolateNameServer.registerPortWithName(
       _receivePort.sendPort,
       _kPortNameOverlay,
     );
-    log("$res : HOME");
+    log('Register Overlay Port Success: $portRegistrationRes');
+
     _receivePort.listen((message) {
       log("message from UI: $message");
       setState(() {
-        messageFromOverlay = 'message from UI: $message';
+        _messageFromUI = 'message from UI: $message';
       });
     });
+  }
+
+  @override
+  void dispose() {
+    _receivePort.close();
+    IsolateNameServer.removePortNameMapping(_kPortNameOverlay);
+
+    super.dispose();
   }
 
   @override
@@ -43,8 +55,8 @@ class _ActivationOverlayState extends State<ActivationOverlay> {
       child: GestureDetector(
         onTap: () async {
           log('Activate!!');
-          homePort ??= IsolateNameServer.lookupPortByName(_kPortNameHome);
-          homePort?.send('From Overlay!!!');
+          _sendPort ??= IsolateNameServer.lookupPortByName(_kPortNameHome);
+          _sendPort?.send('From Overlay!!!');
         },
         child: SizedBox(
           height: MediaQuery.of(context).size.height,

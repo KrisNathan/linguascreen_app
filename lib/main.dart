@@ -32,28 +32,42 @@ class _MyAppState extends State<MyApp> {
   static const String _kPortNameOverlay = 'OVERLAY';
   static const String _kPortNameHome = 'UI';
   final _receivePort = ReceivePort();
-  SendPort? homePort;
-  String? latestMessageFromOverlay;
+  SendPort? _sendPort;
+  String? _latestMessageFromOverlay;
+
 
   @override
   void initState() {
     super.initState();
+    
+    // unregister existing old port:
+    // dispose() may not be called properly in the previous session.
+    IsolateNameServer.removePortNameMapping(_kPortNameHome);
 
-    if (homePort != null) return;
-    final res = IsolateNameServer.registerPortWithName(
+    final portRegistrationRes = IsolateNameServer.registerPortWithName(
       _receivePort.sendPort,
       _kPortNameHome,
     );
-    log("$res: OVERLAY");
+    log('Register UI Port Success: $portRegistrationRes');
+
     _receivePort.listen((message) {
       log("message from OVERLAY: $message");
       setState(() {
-        latestMessageFromOverlay = 'Latest Message From Overlay: $message';
+        _latestMessageFromOverlay = 'Latest Message From Overlay: $message';
       });
     });
 
+
     // homePort ??= IsolateNameServer.lookupPortByName(_kPortNameOverlay);
     // homePort?.send('Send to overlay: ${DateTime.now()}');
+  }
+
+  @override
+  void dispose() {
+    _receivePort.close();
+    IsolateNameServer.removePortNameMapping(_kPortNameHome);
+
+    super.dispose();
   }
 
   @override
