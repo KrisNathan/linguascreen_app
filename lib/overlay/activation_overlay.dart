@@ -56,7 +56,7 @@ class _ActivationOverlayState extends State<ActivationOverlay> {
         onTap: () async {
           log('Activate!!');
           _sendPort ??= IsolateNameServer.lookupPortByName(_kPortNameHome);
-          _sendPort?.send('From Overlay!!!');
+          _sendPort?.send('overlay_activate');
         },
         child: SizedBox(
           height: MediaQuery.of(context).size.height,

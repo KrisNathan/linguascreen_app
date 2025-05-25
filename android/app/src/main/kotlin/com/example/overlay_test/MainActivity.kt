@@ -52,7 +52,6 @@ class MainActivity: FlutterActivity() {
                 }
                 "startScreenCapture" -> {
                     // Request permission. The result will be handled in onActivityResult.
-                    // The actual screenshot result will be sent back from the service via methodChannel.invokeMethod.
                     requestScreenCapturePermission()
                     result.success(null) // Acknowledge the request immediately
                 }
@@ -76,39 +75,52 @@ class MainActivity: FlutterActivity() {
         if (requestCode == SCREEN_CAPTURE_REQUEST_CODE) {
             if (resultCode == Activity.RESULT_OK) {
                 if (data != null) {
-                    // Permission granted, start the foreground service and pass MediaProjection data
-                    val serviceIntent = Intent(this, ScreenCaptureService::class.java).apply {
-                        action = ScreenCaptureService.ACTION_START
-                        putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, resultCode)
-                        putExtra(ScreenCaptureService.EXTRA_DATA_INTENT, data)
-                        putExtra(ScreenCaptureService.EXTRA_CHANNEL_NAME, CHANNEL) // Pass channel name for service to use
-                    }
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        // For Android Oreo (API 26) and above, must use startForegroundService
-                        startForegroundService(serviceIntent)
-                    } else {
-                        startService(serviceIntent)
-                    }
-                    Log.d(TAG, "ScreenCaptureService started with MediaProjection data.")
+                    // Permission granted, minimize the app immediately
+                    minimizeApp()
+                    
+                    // Start the foreground service with a slight delay to ensure app is minimized
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        val serviceIntent = Intent(this, ScreenCaptureService::class.java).apply {
+                            action = ScreenCaptureService.ACTION_START
+                            putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, resultCode)
+                            putExtra(ScreenCaptureService.EXTRA_DATA_INTENT, data)
+                            putExtra(ScreenCaptureService.EXTRA_CHANNEL_NAME, CHANNEL)
+                        }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            startForegroundService(serviceIntent)
+                        } else {
+                            startService(serviceIntent)
+                        }
+                        Log.d(TAG, "ScreenCaptureService started with MediaProjection data after minimizing app.")
+                    }, 500) // 500ms delay to ensure minimize takes effect
+                    
                 } else {
                     Log.e(TAG, "MediaProjection data is null after permission granted.")
-                    // Inform Dart about the error if data is null
                     methodChannel.invokeMethod("screenCaptureError", mapOf("code" to "DATA_NULL", "message" to "MediaProjection data was null after permission granted."))
                 }
             } else {
                 Log.e(TAG, "User denied screen capture permission.")
-                // Inform Dart about the permission denial
                 methodChannel.invokeMethod("screenCaptureError", mapOf("code" to "PERMISSION_DENIED", "message" to "User denied screen capture permission."))
             }
         }
     }
 
+    private fun minimizeApp() {
+        try {
+            // Move the app to background
+            moveTaskToBack(true)
+            Log.d(TAG, "App moved to background")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to minimize app: ${e.message}")
+        }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        val targetRoute = intent.getStringExtra("targetRoute")
-        if (targetRoute != null) {
-            methodChannel.invokeMethod("navigateToPage", targetRoute)
-        }
+        // val targetRoute = intent.getStringExtra("targetRoute")
+        // if (targetRoute != null) {
+        //     methodChannel.invokeMethod("navigateToPage", targetRoute)
+        // }
     }
 
     private fun requestScreenCapturePermission() {
@@ -143,7 +155,4 @@ class MainActivity: FlutterActivity() {
             Log.e(TAG, "Error: Missing arguments for sum method.")
         }
     }
-
-    // No need to override onDestroy to destroy the FlutterEngine here,
-    // as it's cached and managed by FlutterActivity's default lifecycle.
 }
