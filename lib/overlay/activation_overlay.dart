@@ -55,7 +55,7 @@ class _ActivationOverlayState extends State<ActivationOverlay> {
       child: GestureDetector(
         onTap: () async {
           log('Activate!!');
-          _sendPort ??= IsolateNameServer.lookupPortByName(_kPortNameHome);
+          _sendPort = IsolateNameServer.lookupPortByName(_kPortNameHome);
           _sendPort?.send('overlay_activate');
         },
         child: SizedBox(
