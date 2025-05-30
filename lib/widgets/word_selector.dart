@@ -6,13 +6,11 @@ import 'package:overlay_test/models/ocr_word.dart';
 class OcrWordSelector extends StatefulWidget {
   final List<OcrWord> words;
   final Widget image;
-  final Size originalSize;
 
   const OcrWordSelector({
     super.key,
     required this.words,
     required this.image,
-    required this.originalSize,
   });
 
   @override
@@ -20,52 +18,67 @@ class OcrWordSelector extends StatefulWidget {
 }
 
 class _OcrWordSelectorState extends State<OcrWordSelector> {
-  final List<OcrWord> selectedWords = [];
+  final Set<OcrWord> selectedWords = {};
 
-  void toggleSelection(OcrWord word) {
-    setState(() {
-      word.isSelected = !word.isSelected;
-      if (word.isSelected) {
-        selectedWords.add(word);
-      } else {
-        selectedWords.remove(word);
+  void _handleDrag(Offset position) {
+    for (var word in widget.words) {
+      if (!word.isSelected && word.boundingBox.contains(position)) {
+        setState(() {
+          word.isSelected = true;
+          selectedWords.add(word);
+        });
       }
-    });
-
-    for (var word in selectedWords) {
-      log(word.text);
     }
+  }
+
+  void _handleDragEnd(DragEndDetails details) {
+    log(getSelectedText());
   }
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        widget.image,
-        ...widget.words.map((word) {
-          final rect = word.boundingBox;
-
-          return Positioned(
-            left: rect.left,
-            top: rect.top,
-            width: rect.width,
-            height: rect.height,
-            child: GestureDetector(
-              onTap: () => toggleSelection(word),
+    return GestureDetector(
+      onPanStart: (details) {
+        setState(() {
+          for (var selectedWord in selectedWords) {
+            selectedWord.isSelected = false;
+          }
+          selectedWords.clear();
+        });
+      },
+      onPanUpdate: (details) {
+        final RenderBox renderBox = context.findRenderObject() as RenderBox;
+        final localPosition = renderBox.globalToLocal(details.globalPosition);
+        _handleDrag(localPosition);
+      },
+      onPanEnd: _handleDragEnd,
+      child: Stack(
+        children: [
+          widget.image,
+          ...widget.words.map((word) {
+            final rect = word.boundingBox;
+            return Positioned(
+              left: rect.left,
+              top: rect.top,
+              width: rect.width,
+              height: rect.height,
               child: Container(
                 decoration: BoxDecoration(
-                  color: word.isSelected ? Colors.blue.withOpacity(0.3) : null,
+                  color: word.isSelected ? Colors.blue.withValues(alpha: .3) : null,
                   border: Border.all(color: Colors.blue),
                 ),
               ),
-            ),
-          );
-        }),
-      ],
+            );
+          }),
+        ],
+      ),
     );
   }
 
   String getSelectedText() {
-    return selectedWords.map((w) => w.text).join('');
+    return widget.words
+        .where((word) => word.isSelected)
+        .map((w) => w.text)
+        .join(' ');
   }
 }

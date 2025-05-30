@@ -130,7 +130,6 @@ class _OCRPageState extends State<OCRPage> {
             child: OcrWordSelector(
               words: _ocrWords,
               image: Image.file(File(widget.imagePath)),
-              originalSize: _originalSize,
             ),
           ),
         ),
