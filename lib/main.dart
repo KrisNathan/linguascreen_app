@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:overlay_test/app.dart';
 import 'package:overlay_test/overlay/activation_overlay.dart';
-import 'package:overlay_test/pages/editor_page.dart';
 import 'package:overlay_test/pages/ocr_page.dart';
 
 void main() {
@@ -103,7 +102,7 @@ class _MyAppState extends State<MyApp> {
   // I don't know why this doesn't work.
   void _showFullScreenImage(String imagePath) {
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (context) => EditorPage(imagePath: imagePath)),
+      MaterialPageRoute(builder: (context) => OCRPage(imagePath: imagePath)),
     );
   }
 
