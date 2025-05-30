@@ -6,11 +6,13 @@ import 'package:overlay_test/models/ocr_word.dart';
 class OcrWordSelector extends StatefulWidget {
   final List<OcrWord> words;
   final Widget image;
+  final void Function(DragEndDetails details) onDragEnd;
 
   const OcrWordSelector({
     super.key,
     required this.words,
     required this.image,
+    required this.onDragEnd,
   });
 
   @override
@@ -33,6 +35,7 @@ class _OcrWordSelectorState extends State<OcrWordSelector> {
 
   void _handleDragEnd(DragEndDetails details) {
     log(getSelectedText());
+    widget.onDragEnd(details);
   }
 
   @override
@@ -65,7 +68,10 @@ class _OcrWordSelectorState extends State<OcrWordSelector> {
               child: Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.all(Radius.circular(8.0)),
-                  color: word.isSelected ? Colors.blue.withValues(alpha: .3) : null,
+                  color:
+                      word.isSelected
+                          ? Colors.blue.withValues(alpha: .3)
+                          : null,
                   border: Border.all(color: Colors.blue),
                 ),
               ),

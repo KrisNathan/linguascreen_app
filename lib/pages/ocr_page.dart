@@ -18,6 +18,9 @@ class OCRPage extends StatefulWidget {
 class _OCRPageState extends State<OCRPage> {
   late final TransformationController _transformationController;
 
+  bool _isTranslationLoading = false;
+  bool _isExplanationLoading = false;
+
   List<OcrWord> _ocrWords = [];
   Size _originalSize = Size(0, 0);
 
@@ -130,6 +133,83 @@ class _OCRPageState extends State<OCRPage> {
             child: OcrWordSelector(
               words: _ocrWords,
               image: Image.file(File(widget.imagePath)),
+              onDragEnd: (details) {
+                showModalBottomSheet<void>(
+                  context: context,
+                  // IMPORTANT: Allows the sheet to be taller
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (BuildContext context) {
+                    return DraggableScrollableSheet(
+                      initialChildSize: 0.4,
+                      minChildSize: 0.2,
+                      maxChildSize: 0.9,
+                      expand: false,
+                      builder: (
+                        BuildContext context,
+                        ScrollController scrollController,
+                      ) {
+                        return Container(
+                          decoration: BoxDecoration(
+                            color:
+                                Theme.of(
+                                  context,
+                                ).bottomSheetTheme.backgroundColor ??
+                                Colors.white,
+                            borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(20.0),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: .1),
+                                blurRadius: 10,
+                                spreadRadius: 5,
+                              ),
+                            ],
+                          ),
+                          child: ListView(
+                            controller: scrollController,
+                            children: [
+                              Center(
+                                child: Container(
+                                  margin: const EdgeInsets.symmetric(
+                                    vertical: 8.0,
+                                  ),
+                                  width: 40,
+                                  height: 5,
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[300],
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16.0,
+                                  vertical: 8.0,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Translation'),
+                                    _isTranslationLoading
+                                        ? Text('Loading...')
+                                        : Text(''),
+                                    Text('Explanation'),
+                                    _isExplanationLoading
+                                        ? Text('Loading...')
+                                        : Text(''),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    );
+                  },
+                );
+              },
             ),
           ),
         ),
