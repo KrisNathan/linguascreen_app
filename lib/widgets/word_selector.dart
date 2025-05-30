@@ -64,6 +64,7 @@ class _OcrWordSelectorState extends State<OcrWordSelector> {
               height: rect.height,
               child: Container(
                 decoration: BoxDecoration(
+                  borderRadius: BorderRadius.all(Radius.circular(8.0)),
                   color: word.isSelected ? Colors.blue.withValues(alpha: .3) : null,
                   border: Border.all(color: Colors.blue),
                 ),
