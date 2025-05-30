@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:overlay_test/app.dart';
 import 'package:overlay_test/overlay/activation_overlay.dart';
 import 'package:overlay_test/pages/editor_page.dart';
+import 'package:overlay_test/pages/ocr_page.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -145,6 +146,8 @@ class _MyAppState extends State<MyApp> {
     _receivePort.close();
     IsolateNameServer.removePortNameMapping(_kPortNameHome);
 
+    log('Main exited');
+
     super.dispose();
   }
 
@@ -154,7 +157,7 @@ class _MyAppState extends State<MyApp> {
       title: 'LinguaScreen',
       home:
           _lastScreenshotPath != null
-              ? EditorPage(imagePath: _lastScreenshotPath!)
+              ? OCRPage(imagePath: _lastScreenshotPath!)
               : AppWidget(),
       theme: ThemeData(
         useMaterial3: true,
