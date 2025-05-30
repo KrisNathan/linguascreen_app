@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:overlay_test/pages/channel_page.dart';
+import 'package:overlay_test/pages/dictionary_page.dart';
+import 'package:overlay_test/pages/quiz_page.dart';
 import 'package:overlay_test/pages/coming_soon_page.dart';
 import 'package:overlay_test/pages/home_page.dart';
 
@@ -10,7 +12,7 @@ class AppWidget extends StatefulWidget {
   State<AppWidget> createState() => _AppWidgetState();
 }
 
-List<Widget> pages = [ComingSoonPage(), HomePage(), ChannelPage()];
+List<Widget> pages = [DictionaryPage(), HomePage(), QuizPage()];
 
 class _AppWidgetState extends State<AppWidget> {
   int _selectedIndex = 1;
