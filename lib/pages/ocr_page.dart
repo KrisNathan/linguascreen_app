@@ -18,6 +18,8 @@ class OCRPage extends StatefulWidget {
 class _OCRPageState extends State<OCRPage> {
   late final TransformationController _transformationController;
 
+  String? _translation;
+  String? _explanation;
   bool _isTranslationLoading = false;
   bool _isExplanationLoading = false;
 
@@ -83,6 +85,54 @@ class _OCRPageState extends State<OCRPage> {
     }
   }
 
+  Future<void> fetchTranslation(String sentence) async {
+    setState(() {
+      _isTranslationLoading = true;
+    });
+
+    const String translationUrl = 'http://10.0.2.2:8000/ai/translate';
+    try {
+      final response = await post(
+        Uri.parse(translationUrl),
+        body: jsonEncode({'sentences': sentence, 'to_language': 'en'}),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        // success
+        log('Translation successful: ${response.body}');
+        final Map<String, dynamic> json = jsonDecode(response.body);
+        final String translation = json['result']['result'] as String;
+
+        setState(() {
+          _translation = translation;
+        });
+
+        _showTranslationBottomSheet();
+      } else {
+        // err
+        log('Translation failed: ${response.body}');
+      }
+    } catch (e) {
+      log('Error occured while trying to fetch translation: $e');
+    } finally {
+      setState(() {
+        _isTranslationLoading = false;
+      });
+    }
+  }
+
+  void _showTranslationBottomSheet() {
+    log('Showing translation bottom sheet');
+    showModalBottomSheet<void>(
+      context: context,
+      // IMPORTANT: Allows the sheet to be taller
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: _translationBottomSheetBuilder,
+    );
+  }
+
   void _setInitialZoom() {
     final screenSize = MediaQuery.of(context).size;
 
@@ -134,86 +184,101 @@ class _OCRPageState extends State<OCRPage> {
               words: _ocrWords,
               image: Image.file(File(widget.imagePath)),
               onDragEnd: (details) {
-                showModalBottomSheet<void>(
-                  context: context,
-                  // IMPORTANT: Allows the sheet to be taller
-                  isScrollControlled: true,
-                  backgroundColor: Colors.transparent,
-                  builder: (BuildContext context) {
-                    return DraggableScrollableSheet(
-                      initialChildSize: 0.4,
-                      minChildSize: 0.2,
-                      maxChildSize: 0.9,
-                      expand: false,
-                      builder: (
-                        BuildContext context,
-                        ScrollController scrollController,
-                      ) {
-                        return Container(
-                          decoration: BoxDecoration(
-                            color:
-                                Theme.of(
-                                  context,
-                                ).bottomSheetTheme.backgroundColor ??
-                                Colors.white,
-                            borderRadius: const BorderRadius.vertical(
-                              top: Radius.circular(20.0),
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: .1),
-                                blurRadius: 10,
-                                spreadRadius: 5,
-                              ),
-                            ],
-                          ),
-                          child: ListView(
-                            controller: scrollController,
-                            children: [
-                              Center(
-                                child: Container(
-                                  margin: const EdgeInsets.symmetric(
-                                    vertical: 8.0,
-                                  ),
-                                  width: 40,
-                                  height: 5,
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey[300],
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                ),
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16.0,
-                                  vertical: 8.0,
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text('Translation'),
-                                    _isTranslationLoading
-                                        ? Text('Loading...')
-                                        : Text(''),
-                                    Text('Explanation'),
-                                    _isExplanationLoading
-                                        ? Text('Loading...')
-                                        : Text(''),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    );
-                  },
+                fetchTranslation(
+                  _ocrWords
+                      .where((word) => word.isSelected)
+                      .map((word) => word.text)
+                      .join(' '),
                 );
               },
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _translationBottomSheetBuilder(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.4,
+      minChildSize: 0.2,
+      maxChildSize: 0.9,
+      expand: false,
+      builder: (BuildContext context, ScrollController scrollController) {
+        return Container(
+          decoration: BoxDecoration(
+            color:
+                Theme.of(context).bottomSheetTheme.backgroundColor ??
+                Colors.white,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(20.0),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: .1),
+                blurRadius: 10,
+                spreadRadius: 5,
+              ),
+            ],
+          ),
+          child: ListView(
+            controller: scrollController,
+            children: [
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 8.0),
+                  width: 40,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16.0,
+                  vertical: 8.0,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Translation'),
+                    Container(
+                      padding: const EdgeInsets.all(8.0),
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[200],
+                        borderRadius: BorderRadius.circular(8.0),
+                      ),
+                      child: Text(
+                        _isTranslationLoading ? 'Loading...' : '$_translation',
+                        style: const TextStyle(fontSize: 16.0),
+                      ),
+                    ),
+                    SizedBox(height: 8.0),
+                    const Divider(),
+                    SizedBox(height: 8.0),
+                    Text('Explanation'),
+                    Container(
+                      padding: const EdgeInsets.all(8.0),
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[200],
+                        borderRadius: BorderRadius.circular(8.0),
+                      ),
+                      child: Text(
+                        _isExplanationLoading ? 'Loading...' : '$_explanation',
+                        style: const TextStyle(fontSize: 16.0),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
