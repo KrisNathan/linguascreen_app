@@ -65,7 +65,8 @@ class APIs {
               final original = e['original_word'] ?? '';
               final translated = e['translated_word'] ?? '';
               final explanation = e['explanation'] ?? '';
-              return '$original ($translated): $explanation';
+              final romanization = e['romanization'] ?? '';
+              return '$original ($translated) $romanization: $explanation';
             })
             .join('\n');
 
