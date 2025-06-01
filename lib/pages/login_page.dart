@@ -24,7 +24,8 @@ class _LoginPageState extends State<LoginPage> {
       const String loginUrl = 'http://10.0.2.2:8000/login';
       final response = await post(
         Uri.parse(loginUrl),
-        body: {'email': _email, 'password': _password},
+        body: jsonEncode({'email': _email, 'password': _password}),
+        headers: {'Content-Type': 'application/json'},
       );
 
       final body = response.body;
@@ -70,7 +71,7 @@ class _LoginPageState extends State<LoginPage> {
     _postLoginRequest().then((success) {
       if (!mounted) return; // check if widget is still mounted
       if (success) {
-        Navigator.pushReplacementNamed(context, '/dashboard');
+        Navigator.pushReplacementNamed(context, '/dash');
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Login failed. Please try again.')),
