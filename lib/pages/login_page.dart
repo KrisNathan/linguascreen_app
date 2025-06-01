@@ -19,7 +19,7 @@ class _LoginPageState extends State<LoginPage> {
   String _email = '';
   String _password = '';
 
-  Future<bool> _postLoginRequest() async {
+  Future<String?> _postLoginRequest() async {
     try {
       const String loginUrl = 'http://10.0.2.2:8000/login';
       final response = await post(
@@ -33,20 +33,18 @@ class _LoginPageState extends State<LoginPage> {
 
       if (response.statusCode == 200) {
         // success
+        String? accessToken = json['result']['access_token'];
         log('Login successful: $body');
-        await secureStorage.write(
-          key: 'access_token',
-          value: json['result']['access_token'],
-        );
-        return true;
+        await secureStorage.write(key: 'access_token', value: accessToken);
+        return accessToken;
       } else {
         // error
         log('Login failed: $body');
-        return false;
+        return null;
       }
     } catch (e) {
       log('Error occurred while trying to log in: $e');
-      return false;
+      return null;
     }
   }
 
@@ -68,10 +66,14 @@ class _LoginPageState extends State<LoginPage> {
       context,
     ).showSnackBar(const SnackBar(content: Text('Logging in...')));
 
-    _postLoginRequest().then((success) {
+    _postLoginRequest().then((accessToken) {
       if (!mounted) return; // check if widget is still mounted
-      if (success) {
-        Navigator.pushReplacementNamed(context, '/dash');
+      if (accessToken != null) {
+        Navigator.pushReplacementNamed(
+          context,
+          '/dash',
+          arguments: accessToken,
+        );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Login failed. Please try again.')),

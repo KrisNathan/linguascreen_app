@@ -9,7 +9,9 @@ import 'package:overlay_test/pages/home_page.dart';
 import 'package:overlay_test/pages/ocr_page.dart';
 
 class DashboardWidget extends StatefulWidget {
-  const DashboardWidget({super.key});
+  final String sessionToken;
+
+  const DashboardWidget({super.key, required this.sessionToken});
 
   @override
   State<DashboardWidget> createState() => _DashboardWidgetState();
