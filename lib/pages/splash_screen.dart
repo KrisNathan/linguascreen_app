@@ -69,7 +69,7 @@ class _SplashScreenState extends State<SplashScreen> {
     if (!mounted) return;
 
     if (determinedFirstLaunch) {
-      Navigator.pushReplacementNamed(context, '/welcome');
+      Navigator.pushReplacementNamed(context, '/login');
     } else if (!determinedLoggedIn) {
       Navigator.pushReplacementNamed(context, '/login');
     } else {
