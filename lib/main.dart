@@ -52,7 +52,7 @@ class _MyAppState extends State<MyApp> {
     });
 
     // check secure storage for session token
-    secureStorage.read(key: 'session_token').then((value) {
+    secureStorage.read(key: 'access_token').then((value) {
       if (value == null || value.isEmpty) {
         // if no session token, user is not logged in
         setState(() {
