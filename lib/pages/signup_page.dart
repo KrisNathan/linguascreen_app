@@ -37,7 +37,9 @@ class _SignupPageState extends State<SignupPage> {
         }),
         headers: {'Content-Type': 'application/json'},
       );
+
       final body = response.body;
+
       if (response.statusCode == 201) {
         // success
         log('Sign up successful: $body');
@@ -80,7 +82,7 @@ class _SignupPageState extends State<SignupPage> {
           context,
         ).showSnackBar(const SnackBar(content: Text('Sign up successful!')));
 
-        Navigator.pushNamed(context, "/login");
+        Navigator.pushReplacementNamed(context, "/login");
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Sign up failed. Please try again.')),
