@@ -6,6 +6,83 @@ import 'package:http/http.dart';
 import 'package:overlay_test/models/ocr_word.dart';
 import 'package:overlay_test/widgets/word_selector.dart';
 
+class APIs {
+  static Future<Translation?> fetchTranslation(String sentence) async {
+    const String translationUrl = 'http://10.0.2.2:8000/ai/translate';
+    try {
+      final response = await post(
+        Uri.parse(translationUrl),
+        body: jsonEncode({'sentences': sentence, 'to_language': 'en'}),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        // success
+        log('Translation successful: ${response.body}');
+        final Map<String, dynamic> json = jsonDecode(response.body);
+
+        return Translation.fromJson(json['result']);
+      } else {
+        // err
+        log('Translation failed: ${response.body}');
+      }
+    } catch (e) {
+      log('Error occured while trying to fetch translation: $e');
+    }
+    return null;
+  }
+
+  static Future<String?> fetchExplanation(
+    String originalSent,
+    String translatedSent,
+    String originalLang,
+    String targetLang,
+  ) async {
+    const String explanationUrl = 'http://10.0.2.2:8000/ai/explain';
+    try {
+      final response = await post(
+        Uri.parse(explanationUrl),
+        body: jsonEncode({
+          'original_sentence': originalSent,
+          'translated_sentence': translatedSent,
+          'original_lang': originalLang,
+          'target_lang': targetLang,
+        }),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        // success
+        log('Explanation successful: ${response.body}');
+        final Map<String, dynamic> json = jsonDecode(response.body);
+        final String entireExplanation =
+            json['result']['entire_explanation'] as String;
+
+        final List<dynamic> wordsExplanation =
+            json['result']['words_explanation'] ?? [];
+        final String wordsExplanationStr = wordsExplanation
+            .map((e) {
+              final original = e['original_word'] ?? '';
+              final translated = e['translated_word'] ?? '';
+              final explanation = e['explanation'] ?? '';
+              return '$original ($translated): $explanation';
+            })
+            .join('\n');
+
+        final String explanation = '$wordsExplanationStr\n$entireExplanation';
+
+        return explanation;
+      } else {
+        // err
+        log('Explanation failed: ${response.body}');
+      }
+    } catch (e) {
+      log('Error occured while trying to fetch explanation: $e');
+    }
+    return null;
+  }
+}
+
 class OCRPage extends StatefulWidget {
   final String imagePath;
 
@@ -85,45 +162,6 @@ class _OCRPageState extends State<OCRPage> {
     }
   }
 
-  Future<Translation?> _fetchTranslation(String sentence) async {
-    setState(() {
-      _isTranslationLoading = true;
-    });
-
-    const String translationUrl = 'http://10.0.2.2:8000/ai/translate';
-    try {
-      final response = await post(
-        Uri.parse(translationUrl),
-        body: jsonEncode({'sentences': sentence, 'to_language': 'en'}),
-        headers: {'Content-Type': 'application/json'},
-      );
-
-      if (response.statusCode == 200) {
-        // success
-        log('Translation successful: ${response.body}');
-        final Map<String, dynamic> json = jsonDecode(response.body);
-        final String translation = json['result']['result'] as String;
-
-        setState(() {
-          _translation = translation;
-        });
-
-        _showTranslationBottomSheet();
-
-        return Translation.fromJson(json['result']);
-      } else {
-        // err
-        log('Translation failed: ${response.body}');
-      }
-    } catch (e) {
-      log('Error occured while trying to fetch translation: $e');
-    } finally {
-      setState(() {
-        _isTranslationLoading = false;
-      });
-    }
-  }
-
   void _showTranslationBottomSheet() {
     log('Showing translation bottom sheet');
     showModalBottomSheet<void>(
@@ -133,66 +171,6 @@ class _OCRPageState extends State<OCRPage> {
       backgroundColor: Colors.transparent,
       builder: _translationBottomSheetBuilder,
     );
-  }
-
-  Future<void> _fetchExplanation(
-    String originalSent,
-    String translatedSent,
-    String originalLang,
-    String targetLang,
-  ) async {
-    setState(() {
-      _isExplanationLoading = true;
-    });
-
-    const String explanationUrl = 'http://10.0.2.2:8000/ai/explain';
-    try {
-      final response = await post(
-        Uri.parse(explanationUrl),
-        body: jsonEncode({
-          'original_sentence': originalSent,
-          'translated_sentence': translatedSent,
-          'original_lang': originalLang,
-          'target_lang': targetLang,
-        }),
-        headers: {'Content-Type': 'application/json'},
-      );
-
-      if (response.statusCode == 200) {
-        // success
-        log('Explanation successful: ${response.body}');
-        final Map<String, dynamic> json = jsonDecode(response.body);
-        final String entireExplanation =
-            json['result']['entire_explanation'] as String;
-
-        final List<dynamic> wordsExplanation =
-            json['result']['words_explanation'] ?? [];
-        final String wordsExplanationStr = wordsExplanation
-            .map((e) {
-              final original = e['original_word'] ?? '';
-              final translated = e['translated_word'] ?? '';
-              final explanation = e['explanation'] ?? '';
-              return '$original ($translated): $explanation';
-            })
-            .join('\n');
-
-        final String explanation = '$wordsExplanationStr\n$entireExplanation';
-
-        setState(() {
-          _explanation = explanation;
-          _isExplanationLoading = false;
-        });
-      } else {
-        // err
-        log('Explanation failed: ${response.body}');
-      }
-    } catch (e) {
-      log('Error occured while trying to fetch explanation: $e');
-    } finally {
-      setState(() {
-        _isExplanationLoading = false;
-      });
-    }
   }
 
   void _setInitialZoom() {
@@ -208,9 +186,6 @@ class _OCRPageState extends State<OCRPage> {
   void initState() {
     super.initState();
 
-    _fetchOcr().whenComplete(() {
-      log('Fetch OCR Complete');
-    });
     _transformationController = TransformationController();
     _fetchOcr().whenComplete(() {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -245,22 +220,26 @@ class _OCRPageState extends State<OCRPage> {
             child: OcrWordSelector(
               words: _ocrWords,
               image: Image.file(File(widget.imagePath)),
-              onDragEnd: (details) {
-                _fetchTranslation(
-                  _ocrWords
-                      .where((word) => word.isSelected)
-                      .map((word) => word.text)
-                      .join(' '),
-                ).then((Translation? translation) {
-                  if (translation != null) {
-                    _fetchExplanation(
-                      translation.originalSentence,
-                      translation.translatedSentence,
-                      translation.originalLanguage,
-                      translation.targetLanguage,
-                    );
-                  }
-                });
+              onDragEnd: (details) async {
+                _showTranslationBottomSheet();
+
+                // Translation? translation = await APIs.fetchTranslation(
+                //   _ocrWords
+                //       .where((word) => word.isSelected)
+                //       .map((word) => word.text)
+                //       .join(' '),
+                // );
+
+                // if (translation == null) {
+                //   return;
+                // }
+
+                // String? explanation = await APIs.fetchExplanation(
+                //   translation.originalSentence,
+                //   translation.translatedSentence,
+                //   translation.originalLanguage,
+                //   translation.targetLanguage,
+                // );
               },
             ),
           ),
@@ -276,80 +255,197 @@ class _OCRPageState extends State<OCRPage> {
       maxChildSize: 0.9,
       expand: false,
       builder: (BuildContext context, ScrollController scrollController) {
-        return Container(
-          decoration: BoxDecoration(
-            color:
-                Theme.of(context).bottomSheetTheme.backgroundColor ??
-                Colors.white,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(20.0),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: .1),
-                blurRadius: 10,
-                spreadRadius: 5,
-              ),
-            ],
-          ),
-          child: ListView(
-            controller: scrollController,
-            children: [
-              Center(
-                child: Container(
-                  margin: const EdgeInsets.symmetric(vertical: 8.0),
-                  width: 40,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16.0,
-                  vertical: 8.0,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Translation'),
-                    Container(
-                      padding: const EdgeInsets.all(8.0),
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[200],
-                        borderRadius: BorderRadius.circular(8.0),
-                      ),
-                      child: Text(
-                        _isTranslationLoading ? 'Loading...' : '$_translation',
-                        style: const TextStyle(fontSize: 16.0),
-                      ),
-                    ),
-                    SizedBox(height: 8.0),
-                    const Divider(),
-                    SizedBox(height: 8.0),
-                    Text('Explanation'),
-                    Container(
-                      padding: const EdgeInsets.all(8.0),
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[200],
-                        borderRadius: BorderRadius.circular(8.0),
-                      ),
-                      child: Text(
-                        _isExplanationLoading ? 'Loading...' : '$_explanation',
-                        style: const TextStyle(fontSize: 16.0),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+        return TranslationSheetContent(
+          // translation: _translation,
+          // isTranslationLoading: _isTranslationLoading,
+          sentence: _ocrWords
+              .where((word) => word.isSelected)
+              .map((word) => word.text)
+              .join(' '),
+          scrollController: scrollController,
         );
       },
+    );
+  }
+}
+
+class TranslationSheetContent extends StatefulWidget {
+  const TranslationSheetContent({
+    super.key,
+    // required translation,
+    // required isTranslationLoading,
+    required String sentence,
+    required ScrollController scrollController,
+  }) : // _isTranslationLoading = isTranslationLoading,
+       //      _translation = translation,
+       _sentence = sentence,
+       _scrollController = scrollController;
+
+  final String _sentence;
+  final ScrollController _scrollController;
+
+  @override
+  State<TranslationSheetContent> createState() =>
+      _TranslationSheetContentState();
+}
+
+class _TranslationSheetContentState extends State<TranslationSheetContent> {
+  bool _isTranslationLoading = true;
+  String? _translatedStr;
+  Translation? _translation;
+
+  Future<void> asyncInit() async {
+    Translation? translation = await APIs.fetchTranslation(widget._sentence);
+    setState(() {
+      _translation = translation;
+      if (translation == null) {
+        _translatedStr = 'Translation failed. Please try again.';
+      } else {
+        _translatedStr = translation.translatedSentence;
+      }
+      _isTranslationLoading = false;
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    asyncInit();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color:
+            Theme.of(context).bottomSheetTheme.backgroundColor ?? Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20.0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .1),
+            blurRadius: 10,
+            spreadRadius: 5,
+          ),
+        ],
+      ),
+      child: ListView(
+        controller: widget._scrollController,
+        children: [
+          Center(
+            child: Container(
+              margin: const EdgeInsets.symmetric(vertical: 8.0),
+              width: 40,
+              height: 5,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16.0,
+              vertical: 8.0,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Translation'),
+                Container(
+                  padding: const EdgeInsets.all(8.0),
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(8.0),
+                  ),
+                  child: Text(
+                    _isTranslationLoading ? 'Loading...' : '$_translatedStr',
+                    style: const TextStyle(fontSize: 16.0),
+                  ),
+                ),
+                SizedBox(height: 8.0),
+                const Divider(),
+                SizedBox(height: 8.0),
+                TranslationExplanationWidget(translation: _translation),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class TranslationExplanationWidget extends StatefulWidget {
+  const TranslationExplanationWidget({
+    super.key,
+    required Translation? translation,
+  }) : _translation = translation;
+
+  final Translation? _translation;
+
+  @override
+  State<TranslationExplanationWidget> createState() =>
+      _TranslationExplanationWidgetState();
+}
+
+class _TranslationExplanationWidgetState
+    extends State<TranslationExplanationWidget> {
+  Future<String?> asyncInit() async {
+    Translation? translation = widget._translation;
+    if (translation == null) {
+      return 'Loading...';
+    } else {
+      String? explanation = await APIs.fetchExplanation(
+        translation.originalSentence,
+        translation.translatedSentence,
+        translation.originalLanguage,
+        translation.targetLanguage,
+      );
+      return explanation;
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text('Explanation'),
+        Container(
+          padding: const EdgeInsets.all(8.0),
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: Colors.grey[200],
+            borderRadius: BorderRadius.circular(8.0),
+          ),
+          child: FutureBuilder(
+            future: asyncInit(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Text(
+                  'Loading explanation...',
+                  style: TextStyle(fontSize: 16.0),
+                );
+              } else if (snapshot.hasError) {
+                return const Text(
+                  'An error occurred while fetching explanation.',
+                  style: TextStyle(fontSize: 16.0),
+                );
+              }
+              return Text(
+                snapshot.data ?? 'No explanation available.',
+                style: const TextStyle(fontSize: 16.0),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }
