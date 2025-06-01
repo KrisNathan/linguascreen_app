@@ -52,7 +52,7 @@ class _OCRPageState extends State<OCRPage> {
     return (words, originalSize);
   }
 
-  Future<void> fetchOcr() async {
+  Future<void> _fetchOcr() async {
     const String uploadUrl = 'http://10.0.2.2:8000/ai/ocr';
     String imagePath = widget.imagePath;
 
@@ -85,7 +85,7 @@ class _OCRPageState extends State<OCRPage> {
     }
   }
 
-  Future<void> fetchTranslation(String sentence) async {
+  Future<Translation?> _fetchTranslation(String sentence) async {
     setState(() {
       _isTranslationLoading = true;
     });
@@ -109,6 +109,8 @@ class _OCRPageState extends State<OCRPage> {
         });
 
         _showTranslationBottomSheet();
+
+        return Translation.fromJson(json['result']);
       } else {
         // err
         log('Translation failed: ${response.body}');
@@ -133,6 +135,66 @@ class _OCRPageState extends State<OCRPage> {
     );
   }
 
+  Future<void> _fetchExplanation(
+    String originalSent,
+    String translatedSent,
+    String originalLang,
+    String targetLang,
+  ) async {
+    setState(() {
+      _isExplanationLoading = true;
+    });
+
+    const String explanationUrl = 'http://10.0.2.2:8000/ai/explain';
+    try {
+      final response = await post(
+        Uri.parse(explanationUrl),
+        body: jsonEncode({
+          'original_sentence': originalSent,
+          'translated_sentence': translatedSent,
+          'original_lang': originalLang,
+          'target_lang': targetLang,
+        }),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        // success
+        log('Explanation successful: ${response.body}');
+        final Map<String, dynamic> json = jsonDecode(response.body);
+        final String entireExplanation =
+            json['result']['entire_explanation'] as String;
+
+        final List<dynamic> wordsExplanation =
+            json['result']['words_explanation'] ?? [];
+        final String wordsExplanationStr = wordsExplanation
+            .map((e) {
+              final original = e['original_word'] ?? '';
+              final translated = e['translated_word'] ?? '';
+              final explanation = e['explanation'] ?? '';
+              return '$original ($translated): $explanation';
+            })
+            .join('\n');
+
+        final String explanation = '$wordsExplanationStr\n$entireExplanation';
+
+        setState(() {
+          _explanation = explanation;
+          _isExplanationLoading = false;
+        });
+      } else {
+        // err
+        log('Explanation failed: ${response.body}');
+      }
+    } catch (e) {
+      log('Error occured while trying to fetch explanation: $e');
+    } finally {
+      setState(() {
+        _isExplanationLoading = false;
+      });
+    }
+  }
+
   void _setInitialZoom() {
     final screenSize = MediaQuery.of(context).size;
 
@@ -146,11 +208,11 @@ class _OCRPageState extends State<OCRPage> {
   void initState() {
     super.initState();
 
-    fetchOcr().whenComplete(() {
+    _fetchOcr().whenComplete(() {
       log('Fetch OCR Complete');
     });
     _transformationController = TransformationController();
-    fetchOcr().whenComplete(() {
+    _fetchOcr().whenComplete(() {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _setInitialZoom();
       });
@@ -184,12 +246,21 @@ class _OCRPageState extends State<OCRPage> {
               words: _ocrWords,
               image: Image.file(File(widget.imagePath)),
               onDragEnd: (details) {
-                fetchTranslation(
+                _fetchTranslation(
                   _ocrWords
                       .where((word) => word.isSelected)
                       .map((word) => word.text)
                       .join(' '),
-                );
+                ).then((Translation? translation) {
+                  if (translation != null) {
+                    _fetchExplanation(
+                      translation.originalSentence,
+                      translation.translatedSentence,
+                      translation.originalLanguage,
+                      translation.targetLanguage,
+                    );
+                  }
+                });
               },
             ),
           ),
@@ -281,4 +352,24 @@ class _OCRPageState extends State<OCRPage> {
       },
     );
   }
+}
+
+class Translation {
+  final String originalSentence;
+  final String translatedSentence;
+  final String originalLanguage;
+  final String targetLanguage;
+
+  Translation({
+    required this.originalSentence,
+    required this.translatedSentence,
+    required this.originalLanguage,
+    required this.targetLanguage,
+  });
+
+  Translation.fromJson(Map<String, dynamic> json)
+    : originalSentence = json['raw'],
+      translatedSentence = json['result'],
+      originalLanguage = json['from_language'],
+      targetLanguage = json['to_language'];
 }
