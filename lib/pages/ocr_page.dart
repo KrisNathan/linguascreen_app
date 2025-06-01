@@ -95,11 +95,6 @@ class OCRPage extends StatefulWidget {
 class _OCRPageState extends State<OCRPage> {
   late final TransformationController _transformationController;
 
-  String? _translation;
-  String? _explanation;
-  bool _isTranslationLoading = false;
-  bool _isExplanationLoading = false;
-
   List<OcrWord> _ocrWords = [];
   Size _originalSize = Size(0, 0);
 
@@ -222,24 +217,6 @@ class _OCRPageState extends State<OCRPage> {
               image: Image.file(File(widget.imagePath)),
               onDragEnd: (details) async {
                 _showTranslationBottomSheet();
-
-                // Translation? translation = await APIs.fetchTranslation(
-                //   _ocrWords
-                //       .where((word) => word.isSelected)
-                //       .map((word) => word.text)
-                //       .join(' '),
-                // );
-
-                // if (translation == null) {
-                //   return;
-                // }
-
-                // String? explanation = await APIs.fetchExplanation(
-                //   translation.originalSentence,
-                //   translation.translatedSentence,
-                //   translation.originalLanguage,
-                //   translation.targetLanguage,
-                // );
               },
             ),
           ),
@@ -256,8 +233,6 @@ class _OCRPageState extends State<OCRPage> {
       expand: false,
       builder: (BuildContext context, ScrollController scrollController) {
         return TranslationSheetContent(
-          // translation: _translation,
-          // isTranslationLoading: _isTranslationLoading,
           sentence: _ocrWords
               .where((word) => word.isSelected)
               .map((word) => word.text)
@@ -272,13 +247,9 @@ class _OCRPageState extends State<OCRPage> {
 class TranslationSheetContent extends StatefulWidget {
   const TranslationSheetContent({
     super.key,
-    // required translation,
-    // required isTranslationLoading,
     required String sentence,
     required ScrollController scrollController,
-  }) : // _isTranslationLoading = isTranslationLoading,
-       //      _translation = translation,
-       _sentence = sentence,
+  }) : _sentence = sentence,
        _scrollController = scrollController;
 
   final String _sentence;
