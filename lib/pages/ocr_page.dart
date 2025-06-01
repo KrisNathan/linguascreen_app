@@ -323,6 +323,20 @@ class _TranslationSheetContentState extends State<TranslationSheetContent> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Translation'),
+                const SizedBox(height: 8.0),
+                Container(
+                  padding: const EdgeInsets.all(8.0),
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(8.0),
+                  ),
+                  child: Text(
+                    widget._sentence,
+                    style: const TextStyle(fontSize: 16.0),
+                  ),
+                ),
+                const SizedBox(height: 8.0),
                 Container(
                   padding: const EdgeInsets.all(8.0),
                   width: double.infinity,
@@ -335,9 +349,9 @@ class _TranslationSheetContentState extends State<TranslationSheetContent> {
                     style: const TextStyle(fontSize: 16.0),
                   ),
                 ),
-                SizedBox(height: 8.0),
+                const SizedBox(height: 8.0),
                 const Divider(),
-                SizedBox(height: 8.0),
+                const SizedBox(height: 8.0),
                 TranslationExplanationWidget(translation: _translation),
               ],
             ),
@@ -386,8 +400,10 @@ class _TranslationExplanationWidgetState
   @override
   Widget build(BuildContext context) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Explanation'),
+        const SizedBox(height: 8.0),
         Container(
           padding: const EdgeInsets.all(8.0),
           width: double.infinity,
