@@ -74,6 +74,9 @@ class _DictionaryPageState extends State<DictionaryPage> {
 
   // Fetch words from API
   Future<void> fetchWords() async {
+    // Check if widget is still mounted before starting
+    if (!mounted) return;
+    
     setState(() {
       isLoading = true;
       errorMessage = '';
@@ -88,6 +91,9 @@ class _DictionaryPageState extends State<DictionaryPage> {
           if (token != null) 'Authorization': 'Bearer $token',
         },
       );
+
+      // Check if widget is still mounted before calling setState
+      if (!mounted) return;
 
       if (response.statusCode == 200) {
         // Fixed: Handle both List and Map responses
@@ -112,6 +118,9 @@ class _DictionaryPageState extends State<DictionaryPage> {
         throw Exception('Failed to load words: ${response.statusCode}');
       }
     } catch (e) {
+      // Check if widget is still mounted before calling setState
+      if (!mounted) return;
+      
       setState(() {
         errorMessage = 'Error loading words: $e';
         isLoading = false;
@@ -179,10 +188,10 @@ class _DictionaryPageState extends State<DictionaryPage> {
       if (response.statusCode == 200 || response.statusCode == 204) {
         // Refresh the entire list instead of removing by index
         await fetchWords();
-        setState(() {
-          expandedItems.clear(); // Clear expanded items after refresh
-        });
         if (mounted) {
+          setState(() {
+            expandedItems.clear(); // Clear expanded items after refresh
+          });
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Word deleted successfully!')),
           );

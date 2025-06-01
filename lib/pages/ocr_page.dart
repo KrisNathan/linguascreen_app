@@ -170,6 +170,7 @@ class _OCRPageState extends State<OCRPage> {
   }
 
   void _setInitialZoom() {
+    if (!mounted) return;
     final screenSize = MediaQuery.of(context).size;
 
     // Fit to width

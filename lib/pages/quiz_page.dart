@@ -131,24 +131,28 @@ class _QuizPageState extends State<QuizPage> {
 
   Future<void> _initializeQuiz() async {
     await _fetchQuizData();
-    if (quizData.isNotEmpty) {
+    if (mounted && quizData.isNotEmpty) {
       _generateDistractors();
       _shuffleOptions();
       setState(() {
         totalQuestions = quizData.length;
         isLoading = false;
       });
-    } else {
+    } else if (mounted) {
       _useFallbackData();
     }
   }
 
   // Fetch quiz data from API
   Future<void> _fetchQuizData() async {
+    if (!mounted) return;
+    
+    if (mounted) {
     setState(() {
       isLoading = true;
       errorMessage = '';
     });
+    }
 
     try {
       final token = await secureStorage.read(key: 'access_token');
@@ -159,6 +163,8 @@ class _QuizPageState extends State<QuizPage> {
           if (token != null) 'Authorization': 'Bearer $token',
         },
       );
+
+      if (!mounted) return; // Check mounted after async operation
 
       if (response.statusCode == 200) {
         final dynamic jsonData = jsonDecode(response.body);
@@ -189,11 +195,14 @@ class _QuizPageState extends State<QuizPage> {
           
           // Shuffle and limit to reasonable number for quiz
           fetchedQuizData.shuffle();
-          setState(() {
-            quizData = fetchedQuizData.take(10).toList(); // Limit to 10 questions
-            allMeanings = meanings.toList();
-            isLoading = false;
-          });
+          
+          if (mounted) {
+            setState(() {
+              quizData = fetchedQuizData.take(10).toList(); // Limit to 10 questions
+              allMeanings = meanings.toList();
+              isLoading = false;
+            });
+          }
         } else {
           throw Exception('No valid quiz data found');
         }
@@ -201,15 +210,20 @@ class _QuizPageState extends State<QuizPage> {
         throw Exception('Failed to load quiz data: ${response.statusCode}');
       }
     } catch (e) {
-      setState(() {
-        errorMessage = 'Error loading quiz: $e';
-        isLoading = false;
-      });
-      _useFallbackData();
+      if (mounted) {
+        setState(() {
+          errorMessage = 'Error loading quiz: $e';
+          isLoading = false;
+        });
+        _useFallbackData();
+      }
     }
   }
 
   void _useFallbackData() {
+    if (!mounted) return;
+    
+    if (mounted) {
     setState(() {
       quizData = List.from(fallbackQuizData);
       totalQuestions = quizData.length;
@@ -218,6 +232,7 @@ class _QuizPageState extends State<QuizPage> {
         errorMessage = 'Using offline quiz data';
       }
     });
+    }
     _shuffleOptions();
   }
 
@@ -280,16 +295,19 @@ class _QuizPageState extends State<QuizPage> {
   }
 
   void _selectOption(int index) {
-    if (hasAnswered) return;
+    if (hasAnswered || !mounted) return;
     
+    if (mounted) {
     setState(() {
       selectedOptionIndex = index;
     });
+    }
   }
 
   void _submitAnswer() {
-    if (selectedOptionIndex == null) return;
+    if (selectedOptionIndex == null || !mounted) return;
 
+    if (mounted) {
     setState(() {
       hasAnswered = true;
       
@@ -300,23 +318,33 @@ class _QuizPageState extends State<QuizPage> {
         correctAnswers++;
       }
     });
+    }
   }
 
   void _nextQuestion() {
+    if (!mounted) return;
+    
     if (currentQuestionIndex < quizData.length - 1) {
+      if (mounted) {
       setState(() {
         currentQuestionIndex++;
         selectedOptionIndex = null;
         hasAnswered = false;
       });
+      }
     } else {
+      if (mounted) {
       setState(() {
         quizCompleted = true;
       });
+      }
     }
   }
 
   void _restartQuiz() {
+    if (!mounted) return;
+    
+    if (mounted) {
     setState(() {
       currentQuestionIndex = 0;
       selectedOptionIndex = null;
@@ -324,10 +352,14 @@ class _QuizPageState extends State<QuizPage> {
       correctAnswers = 0;
       quizCompleted = false;
     });
+    }
     _shuffleOptions();
   }
 
   Future<void> _refreshQuiz() async {
+    if (!mounted) return;
+    
+    if (mounted) {
     setState(() {
       currentQuestionIndex = 0;
       selectedOptionIndex = null;
@@ -337,6 +369,7 @@ class _QuizPageState extends State<QuizPage> {
       quizData.clear();
       allMeanings.clear();
     });
+    }
     await _initializeQuiz();
   }
 
@@ -407,7 +440,11 @@ class _QuizPageState extends State<QuizPage> {
                         ),
                       ),
                       TextButton(
-                        onPressed: () => setState(() => errorMessage = ''),
+                        onPressed: () {
+                          if (mounted) {
+                            setState(() => errorMessage = '');
+                          }
+                        },
                         child: const Text('Dismiss'),
                       ),
                     ],
