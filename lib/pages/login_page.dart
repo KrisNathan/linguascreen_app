@@ -1,5 +1,8 @@
+import 'dart:convert';
 import 'dart:developer';
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:http/http.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -9,25 +12,71 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
+  final FlutterSecureStorage secureStorage = FlutterSecureStorage();
+
   final _formKey = GlobalKey<FormState>();
 
   String _email = '';
   String _password = '';
 
-  void _handleLogin() {
-    if (_formKey.currentState!.validate()) {
-      _formKey.currentState!.save(); // trigger all onSaved
+  Future<bool> _postLoginRequest() async {
+    try {
+      const String loginUrl = 'http://10.0.2.2:8000/login';
+      final response = await post(
+        Uri.parse(loginUrl),
+        body: {'email': _email, 'password': _password},
+      );
 
-      log('Attempting login (Form method)...');
-      log('Email: $_email');
-      log('Password: $_password');
-    } else {
+      final body = response.body;
+      final Map<String, dynamic> json = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        // success
+        log('Login successful: $body');
+        await secureStorage.write(
+          key: 'access_token',
+          value: json['result']['access_token'],
+        );
+        return true;
+      } else {
+        // error
+        log('Login failed: $body');
+        return false;
+      }
+    } catch (e) {
+      log('Error occurred while trying to log in: $e');
+      return false;
+    }
+  }
+
+  void _handleLogin() {
+    if (!(_formKey.currentState!.validate())) {
       log('Form is not valid');
-      // TODO: SnackBar or AlertDialog to show errors
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please correct the errors.')),
       );
     }
+
+    _formKey.currentState!.save(); // trigger all onSaved
+
+    log('Attempting login (Form method)...');
+    log('Email: $_email');
+    log('Password: $_password');
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Logging in...')));
+
+    _postLoginRequest().then((success) {
+      if (!mounted) return; // check if widget is still mounted
+      if (success) {
+        Navigator.pushReplacementNamed(context, '/dashboard');
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Login failed. Please try again.')),
+        );
+      }
+    });
   }
 
   @override
