@@ -8,16 +8,16 @@ import 'package:overlay_test/pages/quiz_page.dart';
 import 'package:overlay_test/pages/home_page.dart';
 import 'package:overlay_test/pages/ocr_page.dart';
 
-class AppWidget extends StatefulWidget {
-  const AppWidget({super.key});
+class DashboardWidget extends StatefulWidget {
+  const DashboardWidget({super.key});
 
   @override
-  State<AppWidget> createState() => _AppWidgetState();
+  State<DashboardWidget> createState() => _DashboardWidgetState();
 }
 
 List<Widget> pages = [DictionaryPage(), HomePage(), QuizPage()];
 
-class _AppWidgetState extends State<AppWidget> {
+class _DashboardWidgetState extends State<DashboardWidget> {
   int _selectedIndex = 1;
   bool _isCapturing = false;
 
