@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:developer'; // For log()
 import 'package:flutter/material.dart';
 import 'package:http/http.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class SignupPage extends StatefulWidget {
   const SignupPage({super.key});
@@ -26,8 +27,9 @@ class _SignupPageState extends State<SignupPage> {
   }
 
   Future<bool> _postSignupRequest() async {
+    final String baseUrl = dotenv.env['LINGUASCREEN_API_URL'] ?? 'http://10.0.2.2:8000';
     try {
-      const String signupUrl = 'http://10.0.2.2:8000/register';
+      final String signupUrl = '$baseUrl/register';
       final response = await post(
         Uri.parse(signupUrl),
         body: jsonEncode({

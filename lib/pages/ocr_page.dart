@@ -6,12 +6,13 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart';
 import 'package:overlay_test/models/ocr_word.dart';
 import 'package:overlay_test/widgets/word_selector.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class APIs {
-  static const baseUrl = 'http://10.0.2.2:8000';
+  static final String baseUrl = dotenv.env['LINGUASCREEN_API_URL'] ?? 'http://10.0.2.2:8000';
 
   static Future<Translation?> fetchTranslation(String sentence) async {
-    const String translationUrl = '$baseUrl/ai/translate';
+    final String translationUrl = '$baseUrl/ai/translate';
     try {
       final response = await post(
         Uri.parse(translationUrl),
@@ -42,7 +43,7 @@ class APIs {
     String originalLang,
     String targetLang,
   ) async {
-    const String explanationUrl = '$baseUrl/ai/explain';
+    final String explanationUrl = '$baseUrl/ai/explain';
     try {
       final response = await post(
         Uri.parse(explanationUrl),
@@ -92,7 +93,7 @@ class APIs {
     Translation translation,
     FlutterSecureStorage secureStorage,
   ) async {
-    const String saveUrl = '$baseUrl/ai/save';
+    final String saveUrl = '$baseUrl/ai/save';
     try {
       final token = await secureStorage.read(key: 'access_token');
 
@@ -162,7 +163,7 @@ class _OCRPageState extends State<OCRPage> {
   }
 
   Future<void> _fetchOcr() async {
-    const String uploadUrl = 'http://10.0.2.2:8000/ai/ocr';
+    final String uploadUrl = '${APIs.baseUrl}/ai/ocr';
     String imagePath = widget.imagePath;
 
     try {

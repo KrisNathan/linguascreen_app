@@ -6,8 +6,10 @@ import 'package:overlay_test/overlay/activation_overlay.dart';
 import 'package:overlay_test/pages/login_page.dart';
 import 'package:overlay_test/pages/signup_page.dart';
 import 'package:overlay_test/pages/splash_screen.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-void main() {
+Future main() async {
+  await dotenv.load(fileName: ".env");
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const MyApp());
 }

@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'dart:convert';
 import 'dart:math';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 // Model classes for quiz data
 class QuizItem {
@@ -83,7 +84,7 @@ class _QuizPageState extends State<QuizPage> {
   String errorMessage = '';
 
   // API configuration
-  static const String apiBaseUrl = 'http://10.0.2.2:8000';
+  static final String apiBaseUrl = dotenv.env['LINGUASCREEN_API_URL']  ?? 'http://10.0.2.2:8000';
   final FlutterSecureStorage secureStorage = const FlutterSecureStorage();
 
   // Default fallback quiz data
@@ -157,7 +158,7 @@ class _QuizPageState extends State<QuizPage> {
     try {
       final token = await secureStorage.read(key: 'access_token');
       final response = await http.get(
-        Uri.parse('$apiBaseUrl/sentence'), // Your API endpoint
+        Uri.parse('$apiBaseUrl/sentence'),
         headers: {
           'Content-Type': 'application/json',
           if (token != null) 'Authorization': 'Bearer $token',

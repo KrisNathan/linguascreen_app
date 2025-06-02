@@ -3,6 +3,7 @@ import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -20,8 +21,9 @@ class _LoginPageState extends State<LoginPage> {
   String _password = '';
 
   Future<String?> _postLoginRequest() async {
+    final String baseUrl = dotenv.env['LINGUASCREEN_API_URL'] ?? 'http://10.0.2.2:8000';
     try {
-      const String loginUrl = 'http://10.0.2.2:8000/login';
+      final String loginUrl = '$baseUrl/login';
       final response = await post(
         Uri.parse(loginUrl),
         body: jsonEncode({'email': _email, 'password': _password}),

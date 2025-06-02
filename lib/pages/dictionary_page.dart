@@ -1,9 +1,10 @@
 import 'dart:developer';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'dart:convert';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'package:overlay_test/models/saved_words_response.dart';
 import 'package:overlay_test/models/saved_word.dart';
@@ -88,8 +89,7 @@ class _DictionaryPageState extends State<DictionaryPage> {
   bool isLoading = false;
   String errorMessage = '';
 
-  // Replace with your actual API endpoint
-  static const String apiBaseUrl = 'http://10.0.2.2:8000';
+  static final String apiBaseUrl = dotenv.env['LINGUASCREEN_API_URL'] ?? 'http://10.0.2.2:8000';
   final FlutterSecureStorage secureStorage = const FlutterSecureStorage();
 
   @override
@@ -110,6 +110,7 @@ class _DictionaryPageState extends State<DictionaryPage> {
 
     try {
       final token = await secureStorage.read(key: 'access_token');
+      log('$token');
       final response = await http.get(
         Uri.parse('$apiBaseUrl/sentence'), // Your API endpoint
         headers: {
