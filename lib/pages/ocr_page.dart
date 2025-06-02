@@ -2,6 +2,7 @@ import 'dart:developer';
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart';
 import 'package:overlay_test/models/ocr_word.dart';
 import 'package:overlay_test/widgets/word_selector.dart';
@@ -87,9 +88,14 @@ class APIs {
   }
 
   /// Returns true if successful.
-  static Future<bool> saveTranslation(Translation translation) async {
+  static Future<bool> saveTranslation(
+    Translation translation,
+    FlutterSecureStorage secureStorage,
+  ) async {
     const String saveUrl = '$baseUrl/ai/save';
     try {
+      final token = await secureStorage.read(key: 'access_token');
+
       final response = await post(
         Uri.parse(saveUrl),
         body: jsonEncode({
@@ -98,12 +104,15 @@ class APIs {
           'original_lang': translation.originalLanguage,
           'target_lang': translation.targetLanguage,
         }),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
       );
 
       if (response.statusCode == 200) {
         return true;
-      }      
+      }
     } catch (e) {
       log('Error occured while trying to save translation: $e');
     }
@@ -293,6 +302,8 @@ class TranslationSheetContent extends StatefulWidget {
 }
 
 class _TranslationSheetContentState extends State<TranslationSheetContent> {
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+
   bool _isTranslationLoading = true;
   String? _translatedStr;
   Translation? _translation;
@@ -301,7 +312,10 @@ class _TranslationSheetContentState extends State<TranslationSheetContent> {
     Translation? translation = await APIs.fetchTranslation(widget._sentence);
 
     if (translation != null) {
-      bool isSaveSuccess = await APIs.saveTranslation(translation);
+      bool isSaveSuccess = await APIs.saveTranslation(
+        translation,
+        _secureStorage,
+      );
       if (!isSaveSuccess) {
         log('Failed to save translation!');
       }
