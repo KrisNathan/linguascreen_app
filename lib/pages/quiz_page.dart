@@ -419,37 +419,38 @@ class _QuizPageState extends State<QuizPage> {
           padding: const EdgeInsets.all(16.0),
           child: Column(
             children: [
+              // TODO: uncomment when API is implemented
               // Error message
-              if (errorMessage.isNotEmpty)
-                Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.only(bottom: 16.0),
-                  padding: const EdgeInsets.all(12.0),
-                  decoration: BoxDecoration(
-                    color: Colors.orange[100],
-                    borderRadius: BorderRadius.circular(8.0),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.info, color: Colors.orange[800]),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          errorMessage,
-                          style: TextStyle(color: Colors.orange[800]),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          if (mounted) {
-                            setState(() => errorMessage = '');
-                          }
-                        },
-                        child: const Text('Dismiss'),
-                      ),
-                    ],
-                  ),
-                ),
+              // if (errorMessage.isNotEmpty)
+              //   Container(
+              //     width: double.infinity,
+              //     margin: const EdgeInsets.only(bottom: 16.0),
+              //     padding: const EdgeInsets.all(12.0),
+              //     decoration: BoxDecoration(
+              //       color: Colors.orange[100],
+              //       borderRadius: BorderRadius.circular(8.0),
+              //     ),
+              //     child: Row(
+              //       children: [
+              //         Icon(Icons.info, color: Colors.orange[800]),
+              //         const SizedBox(width: 8),
+              //         Expanded(
+              //           child: Text(
+              //             errorMessage,
+              //             style: TextStyle(color: Colors.orange[800]),
+              //           ),
+              //         ),
+              //         TextButton(
+              //           onPressed: () {
+              //             if (mounted) {
+              //               setState(() => errorMessage = '');
+              //             }
+              //           },
+              //           child: const Text('Dismiss'),
+              //         ),
+              //       ],
+              //     ),
+              //   ),
 
               // Progress Bar
               Card.filled(
