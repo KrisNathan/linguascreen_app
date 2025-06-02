@@ -386,6 +386,10 @@ class ScreenCaptureService : Service() {
     }
 
     private fun isValidCapture(bitmap: Bitmap): Boolean {
+        // TODO: remove this when better heuristic is implemented
+        // For now, we assume any bitmap is valid
+        return true
+
         // Simple heuristic to detect if the capture might contain permission dialog
         // This is a basic implementation - you might want to enhance this based on your needs
         
