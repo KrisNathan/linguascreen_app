@@ -642,7 +642,7 @@ class _DictionaryPageState extends State<DictionaryPage> {
           (context) => AlertDialog(
             title: const Text('Delete Word'),
             content: Text(
-              'Are you sure you want to delete "${wordToDelete.word}"?',
+              'Are you sure you want to delete "${wordToDelete.word}"? (Coming Soon)',
             ),
             actions: [
               TextButton(
