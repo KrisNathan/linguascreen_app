@@ -7,8 +7,10 @@ import 'package:overlay_test/models/ocr_word.dart';
 import 'package:overlay_test/widgets/word_selector.dart';
 
 class APIs {
+  static const baseUrl = 'http://10.0.2.2:8000';
+
   static Future<Translation?> fetchTranslation(String sentence) async {
-    const String translationUrl = 'http://10.0.2.2:8000/ai/translate';
+    const String translationUrl = '$baseUrl/ai/translate';
     try {
       final response = await post(
         Uri.parse(translationUrl),
@@ -32,13 +34,14 @@ class APIs {
     return null;
   }
 
+  /// Returns merged explanation strings.
   static Future<String?> fetchExplanation(
     String originalSent,
     String translatedSent,
     String originalLang,
     String targetLang,
   ) async {
-    const String explanationUrl = 'http://10.0.2.2:8000/ai/explain';
+    const String explanationUrl = '$baseUrl/ai/explain';
     try {
       final response = await post(
         Uri.parse(explanationUrl),
@@ -81,6 +84,30 @@ class APIs {
       log('Error occured while trying to fetch explanation: $e');
     }
     return null;
+  }
+
+  /// Returns true if successful.
+  static Future<bool> saveTranslation(Translation translation) async {
+    const String saveUrl = '$baseUrl/ai/save';
+    try {
+      final response = await post(
+        Uri.parse(saveUrl),
+        body: jsonEncode({
+          'original_sentence': translation.originalSentence,
+          'translated_sentence': translation.translatedSentence,
+          'original_lang': translation.originalLanguage,
+          'target_lang': translation.targetLanguage,
+        }),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        return true;
+      }      
+    } catch (e) {
+      log('Error occured while trying to save translation: $e');
+    }
+    return false;
   }
 }
 
