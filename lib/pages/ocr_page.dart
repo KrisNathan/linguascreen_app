@@ -140,6 +140,9 @@ class _OCRPageState extends State<OCRPage> {
         // success
         log('Upload successful: $body');
 
+        if (!mounted) {
+          return;
+        }
         setState(() {
           var (words, oriSize) = parseOcrWordsFromString(
             body,
@@ -269,6 +272,9 @@ class _TranslationSheetContentState extends State<TranslationSheetContent> {
 
   Future<void> asyncInit() async {
     Translation? translation = await APIs.fetchTranslation(widget._sentence);
+    if (!mounted) {
+      return;
+    }
     setState(() {
       _translation = translation;
       if (translation == null) {
