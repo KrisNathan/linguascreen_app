@@ -1,7 +1,7 @@
 import 'dart:developer';
 
 import 'package:flutter/material.dart';
-import 'package:overlay_test/models/ocr_word.dart';
+import 'package:lingua_screen/models/ocr_word.dart';
 
 class OcrWordSelector extends StatefulWidget {
   final List<OcrWord> words;

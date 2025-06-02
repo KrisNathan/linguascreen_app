@@ -1,11 +1,11 @@
 import 'dart:developer';
 
 import 'package:flutter/material.dart';
-import 'package:overlay_test/dashboard.dart';
-import 'package:overlay_test/overlay/activation_overlay.dart';
-import 'package:overlay_test/pages/login_page.dart';
-import 'package:overlay_test/pages/signup_page.dart';
-import 'package:overlay_test/pages/splash_screen.dart';
+import 'package:lingua_screen/dashboard.dart';
+import 'package:lingua_screen/overlay/activation_overlay.dart';
+import 'package:lingua_screen/pages/login_page.dart';
+import 'package:lingua_screen/pages/signup_page.dart';
+import 'package:lingua_screen/pages/splash_screen.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 Future main() async {

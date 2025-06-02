@@ -9,9 +9,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
-        android:label="overlay_test"
+        android:label="Lingua Screen"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/launcher_icon">
 
         <service android:name="flutter.overlay.window.flutter_overlay_window.OverlayService" 
             android:exported="false"

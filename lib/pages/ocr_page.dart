@@ -4,8 +4,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart';
-import 'package:overlay_test/models/ocr_word.dart';
-import 'package:overlay_test/widgets/word_selector.dart';
+import 'package:lingua_screen/models/ocr_word.dart';
+import 'package:lingua_screen/widgets/word_selector.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class APIs {

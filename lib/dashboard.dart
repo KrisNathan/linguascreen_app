@@ -3,10 +3,10 @@ import 'dart:isolate';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:overlay_test/pages/dictionary_page.dart';
-import 'package:overlay_test/pages/quiz_page.dart';
-import 'package:overlay_test/pages/home_page.dart';
-import 'package:overlay_test/pages/ocr_page.dart';
+import 'package:lingua_screen/pages/dictionary_page.dart';
+import 'package:lingua_screen/pages/quiz_page.dart';
+import 'package:lingua_screen/pages/home_page.dart';
+import 'package:lingua_screen/pages/ocr_page.dart';
 
 class DashboardWidget extends StatefulWidget {
   final String sessionToken;

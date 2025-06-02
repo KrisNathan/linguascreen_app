@@ -67,7 +67,11 @@ class _ActivationOverlayState extends State<ActivationOverlay> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.center,
-                children: [const FlutterLogo()],
+                children: [const ImageIcon(
+                  AssetImage('assets/icon.png'),
+                  size: 32.0,
+                  color: Colors.blue,
+                ),],
               ),
             ),
           ),

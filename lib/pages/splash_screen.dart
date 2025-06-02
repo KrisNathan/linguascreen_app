@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 // Assume your page imports are here:
-// import 'package:overlay_test/dashboard.dart'; (Make sure DashboardWidget can accept a token)
-// import 'package:overlay_test/pages/login_page.dart';
+// import 'package:lingua_screen/dashboard.dart'; (Make sure DashboardWidget can accept a token)
+// import 'package:lingua_screen/pages/login_page.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});

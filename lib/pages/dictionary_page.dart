@@ -6,8 +6,8 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-import 'package:overlay_test/models/saved_words_response.dart';
-import 'package:overlay_test/models/saved_word.dart';
+import 'package:lingua_screen/models/saved_words_response.dart';
+import 'package:lingua_screen/models/saved_word.dart';
 
 // Model classes for your dictionary data
 class WordEntry {

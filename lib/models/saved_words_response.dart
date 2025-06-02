@@ -15,7 +15,7 @@
 }
 */
 
-import 'package:overlay_test/models/saved_word.dart';
+import 'package:lingua_screen/models/saved_word.dart';
 
 class SavedWordsResponse {
   final String message;
