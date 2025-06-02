@@ -1,7 +1,12 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'dart:convert';
+
+import 'package:overlay_test/models/saved_words_response.dart';
+import 'package:overlay_test/models/saved_word.dart';
 
 // Model classes for your dictionary data
 class WordEntry {
@@ -30,21 +35,43 @@ class WordEntry {
 }
 
 class SentenceData {
-  final String sentence;
-  final String wordMeaning;
+  final String originalSentence;
+  final String translatedSentence;
+  final String explanation;
 
-  SentenceData({required this.sentence, required this.wordMeaning});
+  SentenceData({
+    required this.originalSentence, 
+    required this.translatedSentence,
+    required this.explanation,
+  });
+
+  // Legacy constructor for backward compatibility
+  SentenceData.legacy({
+    required String sentence,
+    required String wordMeaning,
+  }) : originalSentence = sentence,
+       translatedSentence = '',
+       explanation = wordMeaning;
 
   factory SentenceData.fromJson(Map<String, dynamic> json) {
     return SentenceData(
-      sentence: json['sentence'] ?? '',
-      wordMeaning: json['word_meaning'] ?? '',
+      originalSentence: json['original_sentence'] ?? json['sentence'] ?? '',
+      translatedSentence: json['translated_sentence'] ?? '',
+      explanation: json['explanation'] ?? json['word_meaning'] ?? '',
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {'sentence': sentence, 'word_meaning': wordMeaning};
+    return {
+      'original_sentence': originalSentence,
+      'translated_sentence': translatedSentence,
+      'explanation': explanation,
+    };
   }
+
+  // Legacy getter for backward compatibility
+  String get sentence => originalSentence;
+  String get wordMeaning => explanation;
 }
 
 class DictionaryPage extends StatefulWidget {
@@ -90,26 +117,18 @@ class _DictionaryPageState extends State<DictionaryPage> {
           if (token != null) 'Authorization': 'Bearer $token',
         },
       );
+      log(response.body);
 
       // Check if widget is still mounted before calling setState
       if (!mounted) return;
 
       if (response.statusCode == 200) {
-        // Fixed: Handle both List and Map responses
-        final dynamic jsonData = jsonDecode(response.body);
-        List<WordEntry> wordsList = [];
+        final Map<String, dynamic> jsonData = jsonDecode(response.body);
+        SavedWordsResponse savedWordsResponse =
+            SavedWordsResponse.fromJson(jsonData);
 
-        if (jsonData is List) {
-          wordsList = jsonData.map((json) => WordEntry.fromJson(json)).toList();
-        } else if (jsonData is Map<String, dynamic>) {
-          // If response is a map containing a list of words
-          final List<dynamic>? wordsData =
-              jsonData['words'] ?? jsonData['data'];
-          if (wordsData != null) {
-            wordsList =
-                wordsData.map((json) => WordEntry.fromJson(json)).toList();
-          }
-        }
+        // Map SavedWordsResponse.result to WordEntry
+        List<WordEntry> wordsList = _mapSavedWordsToWordEntries(savedWordsResponse.result);
 
         if (!mounted) return;
         setState(() {
@@ -129,13 +148,47 @@ class _DictionaryPageState extends State<DictionaryPage> {
     }
   }
 
+  // Helper method to map SavedWord list to WordEntry list
+  List<WordEntry> _mapSavedWordsToWordEntries(List<SavedWord> savedWords) {
+    // Group saved words by their original text
+    Map<String, List<SavedWord>> groupedWords = {};
+    
+    for (SavedWord savedWord in savedWords) {
+      String key = savedWord.original.toLowerCase().trim();
+      if (groupedWords.containsKey(key)) {
+        groupedWords[key]!.add(savedWord);
+      } else {
+        groupedWords[key] = [savedWord];
+      }
+    }
+
+    // Convert grouped words to WordEntry objects
+    return groupedWords.entries.map((entry) {
+      String word = entry.key;
+      List<SavedWord> wordInstances = entry.value;
+      
+      List<SentenceData> sentences = wordInstances.map((savedWord) {
+        return SentenceData(
+          originalSentence: savedWord.original,
+          translatedSentence: savedWord.translation,
+          explanation: savedWord.explanation,
+        );
+      }).toList();
+
+      return WordEntry(
+        word: wordInstances.first.original, // Use the original casing
+        sentences: sentences,
+      );
+    }).toList();
+  }
+
   // Delete word via API
   Future<void> deleteWord(int index) async {
     if (index >= filteredWords.length) {
       return;
-    } // Fixed: use filteredWords instead of words
+    }
 
-    final wordToDelete = filteredWords[index]; // Fixed: use filteredWords
+    final wordToDelete = filteredWords[index];
 
     try {
       final token = await secureStorage.read(key: 'access_token');
@@ -177,9 +230,10 @@ class _DictionaryPageState extends State<DictionaryPage> {
     return words.where((wordData) {
       return wordData.word.toLowerCase().contains(searchQuery.toLowerCase()) ||
           wordData.sentences.any(
-            (sentence) => sentence.sentence.toLowerCase().contains(
-              searchQuery.toLowerCase(),
-            ),
+            (sentence) => 
+                sentence.originalSentence.toLowerCase().contains(searchQuery.toLowerCase()) ||
+                sentence.translatedSentence.toLowerCase().contains(searchQuery.toLowerCase()) ||
+                sentence.explanation.toLowerCase().contains(searchQuery.toLowerCase()),
           );
     }).toList();
   }
@@ -240,7 +294,7 @@ class _DictionaryPageState extends State<DictionaryPage> {
                 });
               },
               decoration: InputDecoration(
-                hintText: 'Search words or sentences...',
+                hintText: 'Search words, translations, or explanations...',
                 prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12.0),
@@ -248,7 +302,7 @@ class _DictionaryPageState extends State<DictionaryPage> {
                 ),
                 filled: true,
                 fillColor: Theme.of(context).colorScheme.primaryContainer
-                    .withOpacity(0.3), // Fixed: replaced withValues
+                    .withOpacity(0.3),
               ),
             ),
           ),
@@ -274,7 +328,7 @@ class _DictionaryPageState extends State<DictionaryPage> {
                             Icons.search_off,
                             size: 64,
                             color: Theme.of(context).colorScheme.onSurface
-                                .withOpacity(0.5), // Fixed: replaced withValues
+                                .withOpacity(0.5),
                           ),
                           const SizedBox(height: 16),
                           Text(
@@ -287,7 +341,7 @@ class _DictionaryPageState extends State<DictionaryPage> {
                                 context,
                               ).colorScheme.onSurface.withOpacity(
                                 0.7,
-                              ), // Fixed: replaced withValues
+                              ),
                             ),
                           ),
                           if (words.isEmpty) ...[
@@ -309,7 +363,6 @@ class _DictionaryPageState extends State<DictionaryPage> {
                           final wordData = filteredWords[index];
                           final word = wordData.word;
                           final sentences = wordData.sentences;
-                          // Fixed: Create unique key for expanded state based on word content
                           final wordKey = '${word}_${sentences.length}';
                           final isExpanded = expandedItems.contains(
                             wordKey.hashCode,
@@ -377,8 +430,6 @@ class _DictionaryPageState extends State<DictionaryPage> {
                                     ...sentences.asMap().entries.map((entry) {
                                       final sentenceIndex = entry.key;
                                       final sentenceData = entry.value;
-                                      final sentence = sentenceData.sentence;
-                                      final meaning = sentenceData.wordMeaning;
 
                                       return Container(
                                         width: double.infinity,
@@ -391,13 +442,13 @@ class _DictionaryPageState extends State<DictionaryPage> {
                                                     context,
                                                   ).colorScheme.surface.withOpacity(
                                                     0.3,
-                                                  ), // Fixed: replaced withValues
+                                                  ),
                                         ),
                                         child: Column(
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
                                           children: [
-                                            // Sentence
+                                            // Original Sentence
                                             Container(
                                               padding: const EdgeInsets.all(
                                                 12.0,
@@ -414,50 +465,114 @@ class _DictionaryPageState extends State<DictionaryPage> {
                                                     context,
                                                   ).colorScheme.outline.withOpacity(
                                                     0.2,
-                                                  ), // Fixed: replaced withValues
-                                                ),
-                                              ),
-                                              child: Text(
-                                                sentence,
-                                                style: const TextStyle(
-                                                  fontSize: 16,
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(height: 8.0),
-
-                                            // Word Meaning
-                                            Row(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Icon(
-                                                  Icons.lightbulb_outline,
-                                                  size: 16,
-                                                  color:
-                                                      Theme.of(
-                                                        context,
-                                                      ).colorScheme.primary,
-                                                ),
-                                                const SizedBox(width: 8.0),
-                                                Expanded(
-                                                  child: Text(
-                                                    meaning,
-                                                    style: TextStyle(
-                                                      fontSize: 14,
-                                                      color: Theme.of(context)
-                                                          .colorScheme
-                                                          .onSurface
-                                                          .withOpacity(
-                                                            0.8,
-                                                          ), // Fixed: replaced withValues
-                                                      fontStyle:
-                                                          FontStyle.italic,
-                                                    ),
                                                   ),
                                                 ),
-                                              ],
+                                              ),
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Row(
+                                                    children: [
+                                                      Icon(
+                                                        Icons.language,
+                                                        size: 16,
+                                                        color: Theme.of(context).colorScheme.primary,
+                                                      ),
+                                                      const SizedBox(width: 8),
+                                                      Text(
+                                                        'Original',
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          fontWeight: FontWeight.bold,
+                                                          color: Theme.of(context).colorScheme.primary,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 8),
+                                                  Text(
+                                                    sentenceData.originalSentence,
+                                                    style: const TextStyle(fontSize: 16),
+                                                  ),
+                                                ],
+                                              ),
                                             ),
+                                            
+                                            if (sentenceData.translatedSentence.isNotEmpty) ...[
+                                              const SizedBox(height: 8.0),
+                                              // Translated Sentence
+                                              Container(
+                                                padding: const EdgeInsets.all(12.0),
+                                                decoration: BoxDecoration(
+                                                  color: Theme.of(context).colorScheme.secondaryContainer,
+                                                  borderRadius: BorderRadius.circular(8.0),
+                                                  border: Border.all(
+                                                    color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                                                  ),
+                                                ),
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Row(
+                                                      children: [
+                                                        Icon(
+                                                          Icons.translate,
+                                                          size: 16,
+                                                          color: Theme.of(context).colorScheme.secondary,
+                                                        ),
+                                                        const SizedBox(width: 8),
+                                                        Text(
+                                                          'Translation',
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                            fontWeight: FontWeight.bold,
+                                                            color: Theme.of(context).colorScheme.secondary,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    const SizedBox(height: 8),
+                                                    Text(
+                                                      sentenceData.translatedSentence,
+                                                      style: const TextStyle(fontSize: 16),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+
+                                            if (sentenceData.explanation.isNotEmpty) ...[
+                                              const SizedBox(height: 8.0),
+                                              // Explanation
+                                              Row(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Icon(
+                                                    Icons.lightbulb_outline,
+                                                    size: 16,
+                                                    color:
+                                                        Theme.of(
+                                                          context,
+                                                        ).colorScheme.primary,
+                                                  ),
+                                                  const SizedBox(width: 8.0),
+                                                  Expanded(
+                                                    child: Text(
+                                                      sentenceData.explanation,
+                                                      style: TextStyle(
+                                                        fontSize: 14,
+                                                        color: Theme.of(context)
+                                                            .colorScheme
+                                                            .onSurface
+                                                            .withOpacity(0.8),
+                                                        fontStyle: FontStyle.italic,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
                                           ],
                                         ),
                                       );
@@ -520,7 +635,7 @@ class _DictionaryPageState extends State<DictionaryPage> {
 
   // Confirmation dialog for delete
   void _showDeleteConfirmation(int index) {
-    final wordToDelete = filteredWords[index]; // Fixed: use filteredWords
+    final wordToDelete = filteredWords[index];
     showDialog(
       context: context,
       builder:
@@ -596,16 +711,7 @@ class AddWordDialog extends StatelessWidget {
         ),
         TextButton(
           onPressed: () {
-            // if (wordController.text.isNotEmpty &&
-            //     sentenceController.text.isNotEmpty &&
-            //     meaningController.text.isNotEmpty) {
-            //   addWord(
-            //     wordController.text,
-            //     sentenceController.text,
-            //     meaningController.text,
-            //   );
             Navigator.pop(context);
-            // }
           },
           child: const Text('Add'),
         ),
