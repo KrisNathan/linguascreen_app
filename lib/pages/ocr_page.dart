@@ -299,6 +299,14 @@ class _TranslationSheetContentState extends State<TranslationSheetContent> {
 
   Future<void> asyncInit() async {
     Translation? translation = await APIs.fetchTranslation(widget._sentence);
+
+    if (translation != null) {
+      bool isSaveSuccess = await APIs.saveTranslation(translation);
+      if (!isSaveSuccess) {
+        log('Failed to save translation!');
+      }
+    }
+
     if (!mounted) {
       return;
     }
