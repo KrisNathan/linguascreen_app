@@ -9,7 +9,6 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:lingua_screen/models/saved_words_response.dart';
 import 'package:lingua_screen/models/saved_word.dart';
 
-// Model classes for your dictionary data
 class WordEntry {
   final String word;
   final List<SentenceData> sentences;
@@ -112,7 +111,7 @@ class _DictionaryPageState extends State<DictionaryPage> {
       final token = await secureStorage.read(key: 'access_token');
       log('$token');
       final response = await http.get(
-        Uri.parse('$apiBaseUrl/sentence'), // Your API endpoint
+        Uri.parse('$apiBaseUrl/sentence'),
         headers: {
           'Content-Type': 'application/json',
           if (token != null) 'Authorization': 'Bearer $token',

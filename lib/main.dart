@@ -33,19 +33,9 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  // No longer need FlutterSecureStorage instance here for initial checks
-  // No longer need these state variables for initial routing
-  // bool _isLoading = true;
-  // bool firstLaunch = false;
-  // bool isLoggedIn = false;
-  // String? sessionToken;
-
-  // _checkAppStates method is removed, SplashScreen handles this.
-
   @override
   void initState() {
     super.initState();
-    // Initial checks are now done in SplashScreen
   }
 
   final ThemeData appTheme = ThemeData(
@@ -55,18 +45,16 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) {
-    // The initialRoute is now always the splash screen.
-    // The logic to determine the actual first page is inside SplashScreen.
     return MaterialApp(
       title: 'LinguaScreen',
       theme: appTheme,
       debugShowCheckedModeBanner: false,
       initialRoute:
-          '/', // Or any other name you give to your splash route like '/splash'
+          '/',
       routes: {
         '/':
             (context) =>
-                const SplashScreen(), // Route for your new SplashScreen
+                const SplashScreen(),
         '/welcome':
             (context) => Scaffold(
               body: Center(
@@ -86,7 +74,7 @@ class _MyAppState extends State<MyApp> {
           final token = ModalRoute.of(context)?.settings.arguments as String?;
           if (token == null) {
             // This case should ideally be prevented by SplashScreen's logic
-            // (i.e., don't navigate to /dash if token is null).
+            // (don't navigate to /dash if token is null).
             // Fallback to login if token is unexpectedly null.
             log(
               "Error: Navigated to /dash without a token. Redirecting to /login.",
