@@ -4,12 +4,44 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart';
-import 'package:lingua_screen/models/ocr_word.dart';
+import 'package:lingua_screen/models/ocr_line.dart';
+import 'package:lingua_screen/models/selection_postprocess_response.dart';
 import 'package:lingua_screen/widgets/word_selector.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class APIs {
-  static final String baseUrl = dotenv.env['LINGUASCREEN_API_URL'] ?? 'http://10.0.2.2:8000';
+  static final String baseUrl =
+      dotenv.env['LINGUASCREEN_API_URL'] ?? 'http://10.0.2.2:8000';
+
+  static Future<String?> fetchSelectionText(List<OcrLine> lines) async {
+    if (lines.isEmpty) {
+      return null;
+    }
+
+    try {
+      final response = await post(
+        Uri.parse('$baseUrl/ai/ocr/selection/postprocess'),
+        body: jsonEncode({
+          'ocr_data': {'lines': lines.map((e) => e.toJson()).toList()},
+        }),
+        headers: {'Content-Type': 'application/json'},
+      );
+      if (response.statusCode == 200) {
+        // success
+        log('Selection text fetch successful: ${response.body}');
+        final Map<String, dynamic> json = jsonDecode(response.body);
+        final SelectionPostprocessResponse selectionResponse =
+            SelectionPostprocessResponse.fromJson(json);
+        return selectionResponse.result;
+      } else {
+        // err
+        log('Selection text fetch failed: ${response.body}');
+      }
+    } catch (e) {
+      log('Error occurred while trying to fetch selection text: $e');
+    }
+    return null;
+  }
 
   static Future<Translation?> fetchTranslation(String sentence) async {
     final String translationUrl = '$baseUrl/ai/translate';
@@ -133,15 +165,16 @@ class OCRPage extends StatefulWidget {
 class _OCRPageState extends State<OCRPage> {
   late final TransformationController _transformationController;
 
-  List<OcrWord> _ocrWords = [];
+  List<OcrLine> _ocrLines = [];
+  // List<OcrWord> _ocrWords = [];
   Size _originalSize = Size(0, 0);
 
-  (List<OcrWord>, Size) parseOcrWordsFromString(String jsonStr) {
+  (List<OcrLine>, Size) parseOcrLinesFromString(String jsonStr) {
     final Map<String, dynamic> json = jsonDecode(jsonStr);
 
     log('$json');
 
-    final List<OcrWord> words = [];
+    final List<OcrLine> linesList = [];
 
     Size originalSize = Size(
       (json['result']['metadata']['width'] as num).toDouble(),
@@ -151,15 +184,12 @@ class _OCRPageState extends State<OCRPage> {
     final blocks = json['result']['readResult']['blocks'] as List;
     for (final block in blocks) {
       final lines = block['lines'] as List;
-      for (final line in lines) {
-        final lineWords = line['words'] as List;
-        for (final wordJson in lineWords) {
-          words.add(OcrWord.fromJson(wordJson));
-        }
+      for (final lineJson in lines) {
+        linesList.add(OcrLine.fromJson(lineJson));
       }
     }
 
-    return (words, originalSize);
+    return (linesList, originalSize);
   }
 
   Future<void> _fetchOcr() async {
@@ -181,12 +211,14 @@ class _OCRPageState extends State<OCRPage> {
           return;
         }
         setState(() {
-          var (words, oriSize) = parseOcrWordsFromString(
+          var (lines, oriSize) = parseOcrLinesFromString(
             body,
           ); // from OCR response
-          log('$_ocrWords');
-          log('$_originalSize');
-          _ocrWords = words;
+          _ocrLines = lines;
+          // _ocrWords =
+          //     lines
+          //         .expand((line) => line.words)
+          //         .toList(); // Flatten the list of words from all lines
           _originalSize = oriSize;
         });
       } else {
@@ -255,7 +287,7 @@ class _OCRPageState extends State<OCRPage> {
             width: _originalSize.width,
             height: _originalSize.height,
             child: OcrWordSelector(
-              words: _ocrWords,
+              words: _ocrLines.expand((line) => line.words).toList(),
               image: Image.file(File(widget.imagePath)),
               onDragEnd: (details) async {
                 _showTranslationBottomSheet();
@@ -275,10 +307,7 @@ class _OCRPageState extends State<OCRPage> {
       expand: false,
       builder: (BuildContext context, ScrollController scrollController) {
         return TranslationSheetContent(
-          sentence: _ocrWords
-              .where((word) => word.isSelected)
-              .map((word) => word.text)
-              .join(' '),
+          ocrLines: _ocrLines,
           scrollController: scrollController,
         );
       },
@@ -289,12 +318,12 @@ class _OCRPageState extends State<OCRPage> {
 class TranslationSheetContent extends StatefulWidget {
   const TranslationSheetContent({
     super.key,
-    required String sentence,
+    required List<OcrLine> ocrLines,
     required ScrollController scrollController,
-  }) : _sentence = sentence,
+  }) : _ocrLines = ocrLines,
        _scrollController = scrollController;
 
-  final String _sentence;
+  final List<OcrLine> _ocrLines;
   final ScrollController _scrollController;
 
   @override
@@ -305,12 +334,48 @@ class TranslationSheetContent extends StatefulWidget {
 class _TranslationSheetContentState extends State<TranslationSheetContent> {
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
+  String? _sentence;
   bool _isTranslationLoading = true;
   String? _translatedStr;
   Translation? _translation;
 
   Future<void> asyncInit() async {
-    Translation? translation = await APIs.fetchTranslation(widget._sentence);
+    // Filter lines to only include those with selected words, and only keep selected words in each line
+    List<OcrLine> filteredLines =
+        widget._ocrLines
+            .where((line) => line.words.any((word) => word.isSelected))
+            .map((line) {
+              return OcrLine(
+                text: line.text,
+                polygon: line.polygon,
+                words: line.words.where((word) => word.isSelected).toList(),
+                isSelected: line.isSelected,
+              );
+            })
+            .toList();
+    if (filteredLines.isEmpty) {
+      log('No words selected for translation.');
+      setState(() {
+        _isTranslationLoading = false;
+        _translatedStr = 'No words selected for translation.';
+      });
+      return;
+    }
+    log(
+      'Filtered lines for translation: ${filteredLines.map((line) => line.toJson()).toList()}'
+    );
+
+    String? sentence = await APIs.fetchSelectionText(filteredLines);
+    if (sentence == null || sentence.isEmpty) {
+      log('No text selected for translation.');
+      setState(() {
+        _isTranslationLoading = false;
+        _translatedStr = 'No text selected for translation.';
+      });
+      return;
+    }
+
+    Translation? translation = await APIs.fetchTranslation(sentence);
 
     if (translation != null) {
       bool isSaveSuccess = await APIs.saveTranslation(
@@ -326,6 +391,7 @@ class _TranslationSheetContentState extends State<TranslationSheetContent> {
       return;
     }
     setState(() {
+      _sentence = sentence;
       _translation = translation;
       if (translation == null) {
         _translatedStr = 'Translation failed. Please try again.';
@@ -390,7 +456,7 @@ class _TranslationSheetContentState extends State<TranslationSheetContent> {
                     borderRadius: BorderRadius.circular(8.0),
                   ),
                   child: Text(
-                    widget._sentence,
+                    _isTranslationLoading ? 'Loading...' : '$_sentence',
                     style: const TextStyle(fontSize: 16.0),
                   ),
                 ),
