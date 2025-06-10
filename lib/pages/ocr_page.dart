@@ -4,10 +4,12 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart';
+import 'package:lingua_screen/models/explanation.dart';
 import 'package:lingua_screen/models/ocr_line.dart';
 import 'package:lingua_screen/models/selection_postprocess_response.dart';
 import 'package:lingua_screen/widgets/word_selector.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:lingua_screen/api/explain.dart';
 
 class APIs {
   static final String baseUrl =
@@ -362,7 +364,7 @@ class _TranslationSheetContentState extends State<TranslationSheetContent> {
       return;
     }
     log(
-      'Filtered lines for translation: ${filteredLines.map((line) => line.toJson()).toList()}'
+      'Filtered lines for translation: ${filteredLines.map((line) => line.toJson()).toList()}',
     );
 
     String? sentence = await APIs.fetchSelectionText(filteredLines);
@@ -474,7 +476,7 @@ class _TranslationSheetContentState extends State<TranslationSheetContent> {
                   ),
                 ),
                 const SizedBox(height: 8.0),
-                const Divider(),
+                // const Divider(),
                 const SizedBox(height: 8.0),
                 TranslationExplanationWidget(translation: _translation),
               ],
@@ -501,12 +503,12 @@ class TranslationExplanationWidget extends StatefulWidget {
 
 class _TranslationExplanationWidgetState
     extends State<TranslationExplanationWidget> {
-  Future<String?> asyncInit() async {
+  Future<Explanation?> asyncInit() async {
     Translation? translation = widget._translation;
     if (translation == null) {
-      return 'Loading...';
+      return null;
     } else {
-      String? explanation = await APIs.fetchExplanation(
+      Explanation? explanation = await ExplainApi.fetchExplanation(
         translation.originalSentence,
         translation.translatedSentence,
         translation.originalLanguage,
@@ -528,33 +530,85 @@ class _TranslationExplanationWidgetState
       children: [
         Text('Explanation'),
         const SizedBox(height: 8.0),
-        Container(
-          padding: const EdgeInsets.all(8.0),
-          width: double.infinity,
-          decoration: BoxDecoration(
-            color: Colors.grey[200],
-            borderRadius: BorderRadius.circular(8.0),
-          ),
-          child: FutureBuilder(
-            future: asyncInit(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Text(
-                  'Loading explanation...',
-                  style: TextStyle(fontSize: 16.0),
-                );
-              } else if (snapshot.hasError) {
-                return const Text(
-                  'An error occurred while fetching explanation.',
-                  style: TextStyle(fontSize: 16.0),
-                );
-              }
-              return Text(
-                snapshot.data ?? 'No explanation available.',
-                style: const TextStyle(fontSize: 16.0),
+        FutureBuilder(
+          future: asyncInit(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Text(
+                'Loading explanation...',
+                style: TextStyle(fontSize: 16.0),
               );
-            },
-          ),
+            } else if (snapshot.hasError) {
+              return const Text(
+                'An error occurred while fetching explanation.',
+                style: TextStyle(fontSize: 16.0),
+              );
+            }
+
+            if (snapshot.data == null) {
+              return const Text(
+                'No explanation available.',
+                style: TextStyle(fontSize: 16.0),
+              );
+            }
+            final Explanation explanation = snapshot.data!;
+
+            return Column(
+              children: [
+                explanation.wordsExplanation.isNotEmpty
+                    ? Container(
+                      padding: const EdgeInsets.all(8.0),
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[200],
+                        borderRadius: BorderRadius.circular(8.0),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (
+                            int i = 0;
+                            i < explanation.wordsExplanation.length;
+                            i++
+                          ) ...[
+                            Text(
+                              '${explanation.wordsExplanation[i].originalWord} (${explanation.wordsExplanation[i].romanization})',
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
+                            Text(
+                              explanation.wordsExplanation[i].translatedWord,
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            Text(
+                              explanation.wordsExplanation[i].explanation,
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+
+                            if (i != explanation.wordsExplanation.length - 1)
+                              const Divider(height: 16, thickness: 1),
+                          ],
+                        ],
+                      ),
+                    )
+                    : const SizedBox.shrink(),
+
+                const SizedBox(height: 8.0),
+
+                Container(
+                  padding: const EdgeInsets.all(8.0),
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(8.0),
+                  ),
+                  child: Text(
+                    explanation.entireExplanation,
+                    style: Theme.of(context).textTheme.bodyLarge,
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ],
     );
