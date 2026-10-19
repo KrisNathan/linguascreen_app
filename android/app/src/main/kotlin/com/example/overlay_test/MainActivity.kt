@@ -3,6 +3,7 @@ package com.example.overlay_test
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.media.projection.MediaProjectionConfig
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
@@ -29,6 +30,9 @@ class MainActivity: FlutterActivity() {
 
     private val SCREEN_CAPTURE_REQUEST_CODE = 1001
 
+    // Result of a pending 'startScreenCapture' call, completed in onActivityResult.
+    private var pendingStartResult: MethodChannel.Result? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -51,17 +55,36 @@ class MainActivity: FlutterActivity() {
                     handleSumMethod(call, result)
                 }
                 "startScreenCapture" -> {
-                    // Request permission. The result will be handled in onActivityResult.
-                    requestScreenCapturePermission()
-                    result.success(null) // Acknowledge the request immediately
+                    // Starts the screen recording session used by the floating button.
+                    // Resolves with true once permission is granted, false if denied.
+                    if (ScreenCaptureService.isRunning) {
+                        result.success(true)
+                    } else {
+                        pendingStartResult?.success(false)
+                        pendingStartResult = result
+                        requestScreenCapturePermission()
+                    }
+                }
+                "captureScreenshot" -> {
+                    // Grabs the latest frame of the running session.
+                    // The file path is delivered through 'screenCaptureSuccess'.
+                    val service = ScreenCaptureService.instance
+                    if (service != null && ScreenCaptureService.isRunning) {
+                        service.captureFrame()
+                        result.success(null)
+                    } else {
+                        result.error("NOT_RUNNING", "Screen capture session is not running.", null)
+                    }
+                }
+                "isScreenCaptureRunning" -> {
+                    result.success(ScreenCaptureService.isRunning)
                 }
                 "stopScreenCapture" -> {
-                    // Send an intent to the service to stop capture
-                    val serviceIntent = Intent(this, ScreenCaptureService::class.java).apply {
-                        action = ScreenCaptureService.ACTION_STOP
+                    ScreenCaptureService.instance?.let {
+                        it.stopScreenCapture()
+                        it.stopSelf()
                     }
-                    startService(serviceIntent) // Start the service (or send command to existing one)
-                    result.success(true) // Acknowledge the stop request
+                    result.success(true)
                 }
                 else -> {
                     result.notImplemented()
@@ -73,45 +96,30 @@ class MainActivity: FlutterActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == SCREEN_CAPTURE_REQUEST_CODE) {
-            if (resultCode == Activity.RESULT_OK) {
-                if (data != null) {
-                    // Permission granted, minimize the app immediately
-                    minimizeApp()
-                    
-                    // Start the foreground service with a slight delay to ensure app is minimized
-                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                        val serviceIntent = Intent(this, ScreenCaptureService::class.java).apply {
-                            action = ScreenCaptureService.ACTION_START
-                            putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, resultCode)
-                            putExtra(ScreenCaptureService.EXTRA_DATA_INTENT, data)
-                            putExtra(ScreenCaptureService.EXTRA_CHANNEL_NAME, CHANNEL)
-                        }
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            startForegroundService(serviceIntent)
-                        } else {
-                            startService(serviceIntent)
-                        }
-                        Log.d(TAG, "ScreenCaptureService started with MediaProjection data after minimizing app.")
-                    }, 500) // 500ms delay to ensure minimize takes effect
-                    
-                } else {
-                    Log.e(TAG, "MediaProjection data is null after permission granted.")
-                    methodChannel.invokeMethod("screenCaptureError", mapOf("code" to "DATA_NULL", "message" to "MediaProjection data was null after permission granted."))
+            val pendingResult = pendingStartResult
+            pendingStartResult = null
+
+            if (resultCode == Activity.RESULT_OK && data != null) {
+                val serviceIntent = Intent(this, ScreenCaptureService::class.java).apply {
+                    action = ScreenCaptureService.ACTION_START
+                    putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, resultCode)
+                    putExtra(ScreenCaptureService.EXTRA_DATA_INTENT, data)
+                    putExtra(ScreenCaptureService.EXTRA_CHANNEL_NAME, CHANNEL)
                 }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(serviceIntent)
+                } else {
+                    startService(serviceIntent)
+                }
+                Log.d(TAG, "ScreenCaptureService started with MediaProjection data.")
+                pendingResult?.success(true)
+            } else if (resultCode == Activity.RESULT_OK) {
+                Log.e(TAG, "MediaProjection data is null after permission granted.")
+                pendingResult?.error("DATA_NULL", "MediaProjection data was null after permission granted.", null)
             } else {
                 Log.e(TAG, "User denied screen capture permission.")
-                methodChannel.invokeMethod("screenCaptureError", mapOf("code" to "PERMISSION_DENIED", "message" to "User denied screen capture permission."))
+                pendingResult?.success(false)
             }
-        }
-    }
-
-    private fun minimizeApp() {
-        try {
-            // Move the app to background
-            moveTaskToBack(true)
-            Log.d(TAG, "App moved to background")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to minimize app: ${e.message}")
         }
     }
 
@@ -124,7 +132,12 @@ class MainActivity: FlutterActivity() {
     }
 
     private fun requestScreenCapturePermission() {
-        val captureIntent = mediaProjectionManager.createScreenCaptureIntent()
+        // Only allow recording the entire screen, since the shortcut can be used over any app.
+        val captureIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            mediaProjectionManager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
+        } else {
+            mediaProjectionManager.createScreenCaptureIntent()
+        }
         startActivityForResult(captureIntent, SCREEN_CAPTURE_REQUEST_CODE)
     }
 

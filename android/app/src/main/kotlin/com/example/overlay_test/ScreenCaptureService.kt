@@ -24,12 +24,16 @@ import android.view.WindowManager
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
-import kotlinx.coroutines.*
 
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.embedding.engine.FlutterEngineCache
-import io.flutter.embedding.engine.FlutterEngine
 
+/**
+ * Keeps a MediaProjection session (screen recording) alive for as long as the
+ * floating shortcut button is enabled. The latest frame is always held in memory,
+ * so a screenshot can be taken instantly via [captureFrame] without asking the
+ * user for permission again.
+ */
 class ScreenCaptureService : Service() {
 
     companion object {
@@ -38,44 +42,47 @@ class ScreenCaptureService : Service() {
         private const val NOTIFICATION_ID = 101
 
         const val ACTION_START = "ACTION_START_SCREEN_CAPTURE"
-        const val ACTION_STOP = "ACTION_STOP_SCREEN_CAPTURE"
         const val EXTRA_RESULT_CODE = "extra_result_code"
         const val EXTRA_DATA_INTENT = "extra_data_intent"
         const val EXTRA_CHANNEL_NAME = "extra_channel_name"
-        
-        // Delay constants for permission dialog handling
-        private const val CAPTURE_DELAY_MS = 1500L // Wait for permission dialog to dismiss
-        private const val MAX_CAPTURE_ATTEMPTS = 3
-        private const val ATTEMPT_INTERVAL_MS = 500L
+
+        // The running service, if any. The service lives in the same process as
+        // MainActivity, so it can be called directly instead of through intents.
+        @Volatile
+        var instance: ScreenCaptureService? = null
+            private set
+
+        val isRunning: Boolean
+            get() = instance?.mediaProjection != null
     }
 
     private var mediaProjection: MediaProjection? = null
     private var imageReader: ImageReader? = null
     private var virtualDisplay: android.hardware.display.VirtualDisplay? = null
     private lateinit var notificationManager: NotificationManager
-    private var methodChannel: MethodChannel? = null
-    private lateinit var channelName: String
+    private var channelName: String = "com.example.overlay_test/helper"
 
     private var imageReaderHandlerThread: HandlerThread? = null
     private var imageReaderHandler: Handler? = null
-    private var isCapturing = false
-    private var captureAttempts = 0
-    
-    // Coroutine scope for managing delays and retries
-    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+    // Most recent frame produced by the virtual display. Guarded by imageLock.
+    private val imageLock = Any()
+    private var latestImage: Image? = null
+    private var captureWidth = 0
+    private var captureHeight = 0
 
     // Main thread handler to post Flutter MethodChannel calls
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val mediaProjectionCallback = object : MediaProjection.Callback() {
         override fun onStop() {
+            // Called when the session is ended outside of our control,
+            // e.g. the user stops sharing from the system UI.
             Log.e(TAG, "MediaProjection session stopped.")
-            mainHandler.post {
-                methodChannel?.invokeMethod("screenCaptureError", mapOf(
-                    "code" to "SESSION_STOPPED", 
-                    "message" to "MediaProjection session stopped unexpectedly."
-                ))
-            }
+            sendToFlutter("screenCaptureError", mapOf(
+                "code" to "SESSION_STOPPED",
+                "message" to "MediaProjection session stopped unexpectedly."
+            ))
             stopScreenCapture()
             stopSelf()
         }
@@ -83,6 +90,7 @@ class ScreenCaptureService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannel()
         Log.d(TAG, "ScreenCaptureService onCreate.")
@@ -98,21 +106,10 @@ class ScreenCaptureService : Service() {
         startForeground(NOTIFICATION_ID, createNotification())
         Log.d(TAG, "Foreground service started with ID: $NOTIFICATION_ID")
 
-        intent?.let {
-            when (it.action) {
-                ACTION_START -> handleStartCapture(it)
-                ACTION_STOP -> {
-                    Log.d(TAG, "Received stop action. Stopping service.")
-                    stopScreenCapture()
-                    stopSelf()
-                }
-                else -> {
-                    Log.w(TAG, "Unhandled intent action: ${it.action}. Stopping service if no valid action.")
-                    stopSelf()
-                }
-            }
-        } ?: run {
-            Log.w(TAG, "Service started with null intent. Stopping service.")
+        if (intent?.action == ACTION_START) {
+            handleStartCapture(intent)
+        } else {
+            Log.w(TAG, "Unhandled intent action: ${intent?.action}. Stopping service.")
             stopSelf()
         }
         return START_NOT_STICKY
@@ -121,86 +118,58 @@ class ScreenCaptureService : Service() {
     private fun handleStartCapture(intent: Intent) {
         val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
         val data = intent.getParcelableExtra<Intent>(EXTRA_DATA_INTENT)
-        channelName = intent.getStringExtra(EXTRA_CHANNEL_NAME) ?: "com.example.overlay_test/helper"
+        channelName = intent.getStringExtra(EXTRA_CHANNEL_NAME) ?: channelName
 
-        val flutterEngine = FlutterEngineCache.getInstance().get(MainActivity.ENGINE_ID)
+        if (mediaProjection != null) {
+            Log.d(TAG, "Screen capture session already running.")
+            return
+        }
 
-        if (flutterEngine != null) {
-            methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
-            Log.d(TAG, "MethodChannel initialized for channel: $channelName")
-        } else {
-            Log.e(TAG, "FlutterEngine not found in cache. Cannot establish MethodChannel. Stopping service.")
+        if (resultCode == 0 || data == null) {
+            Log.e(TAG, "Invalid result code or data intent for MediaProjection. Stopping service.")
+            sendToFlutter("screenCaptureError", mapOf(
+                "code" to "INVALID_PARAMS",
+                "message" to "Invalid parameters for starting capture service."
+            ))
             stopSelf()
             return
         }
 
-        if (resultCode != 0 && data != null) {
-            try {
-                val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-                mediaProjection = mediaProjectionManager.getMediaProjection(resultCode, data)
+        try {
+            val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            mediaProjection = mediaProjectionManager.getMediaProjection(resultCode, data)
 
-                if (mediaProjection != null) {
-                    mediaProjection?.registerCallback(mediaProjectionCallback, null)
-                    Log.d(TAG, "MediaProjection callback registered.")
-                    
-                    // Start capture with delay to allow permission dialog to dismiss
-                    startDelayedCapture()
-                } else {
-                    Log.e(TAG, "Failed to get MediaProjection after permission granted. Stopping service.")
-                    mainHandler.post {
-                        methodChannel?.invokeMethod("screenCaptureError", mapOf(
-                            "code" to "MEDIA_PROJECTION_NULL", 
-                            "message" to "Failed to acquire MediaProjection object."
-                        ))
-                    }
-                    stopSelf()
-                }
-            } catch (e: SecurityException) {
-                Log.e(TAG, "SecurityException while getting MediaProjection: ${e.message}. Stopping service.")
-                mainHandler.post {
-                    methodChannel?.invokeMethod("screenCaptureError", mapOf(
-                        "code" to "SECURITY_EXCEPTION", 
-                        "message" to "Security error getting MediaProjection: ${e.message}"
-                    ))
-                }
-                stopSelf()
-            } catch (e: Exception) {
-                Log.e(TAG, "General error getting MediaProjection: ${e.message}. Stopping service.", e)
-                mainHandler.post {
-                    methodChannel?.invokeMethod("screenCaptureError", mapOf(
-                        "code" to "GENERAL_ERROR", 
-                        "message" to "Failed to get MediaProjection: ${e.message}"
-                    ))
-                }
-                stopSelf()
-            }
-        } else {
-            Log.e(TAG, "Invalid result code or data intent for MediaProjection. Stopping service.")
-            mainHandler.post {
-                methodChannel?.invokeMethod("screenCaptureError", mapOf(
-                    "code" to "INVALID_PARAMS", 
-                    "message" to "Invalid parameters for starting capture service."
+            if (mediaProjection == null) {
+                Log.e(TAG, "Failed to get MediaProjection after permission granted. Stopping service.")
+                sendToFlutter("screenCaptureError", mapOf(
+                    "code" to "MEDIA_PROJECTION_NULL",
+                    "message" to "Failed to acquire MediaProjection object."
                 ))
-            }
-            stopSelf()
-        }
-    }
-
-    private fun startDelayedCapture() {
-        Log.d(TAG, "Starting delayed capture to avoid permission dialog interference")
-        
-        serviceScope.launch {
-            // Wait for permission dialog to dismiss
-            delay(CAPTURE_DELAY_MS)
-            
-            if (mediaProjection != null) {
-                isCapturing = true
-                captureAttempts = 0
-                startScreenCaptureInternal()
-            } else {
-                Log.e(TAG, "MediaProjection became null during delay")
                 stopSelf()
+                return
             }
+
+            // Must be registered before creating the virtual display (required on Android 14+)
+            mediaProjection?.registerCallback(mediaProjectionCallback, mainHandler)
+            Log.d(TAG, "MediaProjection callback registered.")
+
+            startRecording()
+        } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException while getting MediaProjection: ${e.message}. Stopping service.")
+            sendToFlutter("screenCaptureError", mapOf(
+                "code" to "SECURITY_EXCEPTION",
+                "message" to "Security error getting MediaProjection: ${e.message}"
+            ))
+            stopScreenCapture()
+            stopSelf()
+        } catch (e: Exception) {
+            Log.e(TAG, "General error getting MediaProjection: ${e.message}. Stopping service.", e)
+            sendToFlutter("screenCaptureError", mapOf(
+                "code" to "GENERAL_ERROR",
+                "message" to "Failed to get MediaProjection: ${e.message}"
+            ))
+            stopScreenCapture()
+            stopSelf()
         }
     }
 
@@ -219,62 +188,52 @@ class ScreenCaptureService : Service() {
     private fun createNotification(): Notification {
         return Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle("Screen Capture Running")
-            .setContentText("Your screen is currently being captured.")
+            .setContentText("Tap the LinguaScreen shortcut button to capture your screen.")
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .build().also {
                 Log.d(TAG, "Notification created.")
             }
     }
 
-    private fun startScreenCaptureInternal() {
-        if (mediaProjection == null) {
-            Log.e(TAG, "MediaProjection is null. Cannot start capture internally.")
-            mainHandler.post {
-                methodChannel?.invokeMethod("screenCaptureError", mapOf(
-                    "code" to "INTERNAL_ERROR", 
-                    "message" to "MediaProjection not available during internal capture setup."
-                ))
-            }
-            stopSelf()
-            return
-        }
-
+    private fun startRecording() {
         val (screenWidth, screenHeight, screenDensityDpi) = getScreenDimensions()
 
         if (screenWidth <= 0 || screenHeight <= 0) {
             Log.e(TAG, "Screen dimensions are invalid: ${screenWidth}x${screenHeight}")
-            mainHandler.post {
-                methodChannel?.invokeMethod("screenCaptureError", mapOf(
-                    "code" to "INVALID_DIMENSIONS", 
-                    "message" to "Screen dimensions are zero or negative."
-                ))
-            }
+            sendToFlutter("screenCaptureError", mapOf(
+                "code" to "INVALID_DIMENSIONS",
+                "message" to "Screen dimensions are zero or negative."
+            ))
+            stopScreenCapture()
             stopSelf()
             return
         }
 
         Log.d(TAG, "Screen dimensions: ${screenWidth}x${screenHeight} @ ${screenDensityDpi}dpi")
+        captureWidth = screenWidth
+        captureHeight = screenHeight
 
-        try {
-            setupImageReader(screenWidth, screenHeight)
-            createVirtualDisplay(screenWidth, screenHeight, screenDensityDpi)
-            Log.d(TAG, "VirtualDisplay created. Waiting for image on ImageReaderThread.")
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error setting up ImageReader or VirtualDisplay: ${e.message}", e)
-            mainHandler.post {
-                methodChannel?.invokeMethod("screenCaptureError", mapOf(
-                    "code" to "SETUP_FAILED", 
-                    "message" to "Failed to set up capture components: ${e.message}"
-                ))
-            }
-            stopSelf()
+        // One image is held as the latest frame while the next one is acquired.
+        imageReader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 2).apply {
+            setOnImageAvailableListener({ reader -> handleImageAvailable(reader) }, imageReaderHandler)
         }
+
+        virtualDisplay = mediaProjection?.createVirtualDisplay(
+            "ScreenCapture",
+            screenWidth,
+            screenHeight,
+            screenDensityDpi,
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+            imageReader?.surface,
+            null,
+            null
+        )
+        Log.d(TAG, "VirtualDisplay created. Screen recording started.")
     }
 
     private fun getScreenDimensions(): Triple<Int, Int, Int> {
         val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        
+
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val windowMetrics = windowManager.currentWindowMetrics
             Triple(
@@ -290,81 +249,57 @@ class ScreenCaptureService : Service() {
         }
     }
 
-    private fun setupImageReader(screenWidth: Int, screenHeight: Int) {
-        imageReader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 1)
-
-        imageReader?.setOnImageAvailableListener({ reader ->
-            handleImageAvailable(reader, screenWidth, screenHeight)
-        }, imageReaderHandler)
-    }
-
-    private fun handleImageAvailable(reader: ImageReader, screenWidth: Int, screenHeight: Int) {
-        if (!isCapturing) {
-            Log.d(TAG, "Ignoring image callback - capture already completed")
-            return
-        }
-        
-        var image: Image? = null
+    private fun handleImageAvailable(reader: ImageReader) {
         try {
-            image = reader.acquireLatestImage()
-            if (image != null) {
-                Log.d(TAG, "Image acquired successfully! Attempt: ${captureAttempts + 1}")
-                
-                val bitmap = convertImageToBitmap(image, screenWidth, screenHeight)
-                
-                // Check if this looks like a valid capture (not just permission dialog)
-                if (isValidCapture(bitmap)) {
-                    isCapturing = false
-                    val filePath = saveBitmap(bitmap)
-                    
-                    mainHandler.post {
-                        methodChannel?.invokeMethod("screenCaptureSuccess", filePath)
-                    }
-                    
-                    bitmap.recycle()
-                    stopScreenCapture()
-                    stopSelf()
-                } else {
-                    // Retry if we haven't reached max attempts
-                    captureAttempts++
-                    if (captureAttempts < MAX_CAPTURE_ATTEMPTS) {
-                        Log.d(TAG, "Capture may contain dialog overlay, retrying in ${ATTEMPT_INTERVAL_MS}ms")
-                        bitmap.recycle()
-                        
-                        serviceScope.launch {
-                            delay(ATTEMPT_INTERVAL_MS)
-                            // The next image callback will be triggered automatically
-                        }
-                    } else {
-                        Log.w(TAG, "Max capture attempts reached, proceeding with current image")
-                        isCapturing = false
-                        val filePath = saveBitmap(bitmap)
-                        
-                        mainHandler.post {
-                            methodChannel?.invokeMethod("screenCaptureSuccess", filePath)
-                        }
-                        
-                        bitmap.recycle()
-                        stopScreenCapture()
-                        stopSelf()
-                    }
-                }
-            } else {
-                Log.d(TAG, "Acquired image is null - this can happen with multiple callbacks")
+            val image = reader.acquireLatestImage() ?: return
+            synchronized(imageLock) {
+                latestImage?.close()
+                latestImage = image
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error acquiring or processing image: ${e.message}", e)
-            isCapturing = false
-            mainHandler.post {
-                methodChannel?.invokeMethod("screenCaptureError", mapOf(
-                    "code" to "CAPTURE_FAILED", 
+            Log.w(TAG, "Failed to acquire frame: ${e.message}")
+        }
+    }
+
+    /**
+     * Saves the most recent frame of the running recording session and reports
+     * the file path back to Flutter via `screenCaptureSuccess`.
+     */
+    fun captureFrame() {
+        val handler = imageReaderHandler
+        if (handler == null) {
+            sendToFlutter("screenCaptureError", mapOf(
+                "code" to "NOT_RUNNING",
+                "message" to "Screen capture session is not running."
+            ))
+            return
+        }
+
+        handler.post {
+            try {
+                val bitmap = synchronized(imageLock) {
+                    latestImage?.let { convertImageToBitmap(it, captureWidth, captureHeight) }
+                }
+
+                if (bitmap == null) {
+                    Log.e(TAG, "No frame available yet.")
+                    sendToFlutter("screenCaptureError", mapOf(
+                        "code" to "NO_FRAME",
+                        "message" to "No screen frame is available yet."
+                    ))
+                    return@post
+                }
+
+                val filePath = saveBitmap(bitmap)
+                bitmap.recycle()
+                sendToFlutter("screenCaptureSuccess", filePath)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error processing frame: ${e.message}", e)
+                sendToFlutter("screenCaptureError", mapOf(
+                    "code" to "CAPTURE_FAILED",
                     "message" to "Failed to capture image: ${e.message}"
                 ))
             }
-            stopScreenCapture()
-            stopSelf()
-        } finally {
-            image?.close()
         }
     }
 
@@ -380,73 +315,23 @@ class ScreenCaptureService : Service() {
             screenHeight,
             Bitmap.Config.ARGB_8888
         )
+        // The same frame may be read more than once, so always start from the beginning.
+        buffer.rewind()
         bitmap.copyPixelsFromBuffer(buffer)
 
-        return Bitmap.createBitmap(bitmap, 0, 0, screenWidth, screenHeight)
+        val cropped = Bitmap.createBitmap(bitmap, 0, 0, screenWidth, screenHeight)
+        if (cropped != bitmap) bitmap.recycle()
+        return cropped
     }
 
-    private fun isValidCapture(bitmap: Bitmap): Boolean {
-        // TODO: remove this when better heuristic is implemented
-        // For now, we assume any bitmap is valid
-        return true
-
-        // Simple heuristic to detect if the capture might contain permission dialog
-        // This is a basic implementation - you might want to enhance this based on your needs
-        
-        // Check if the image is mostly uniform (which might indicate a dialog overlay)
-        val sampleSize = 100
-        val centerX = bitmap.width / 2
-        val centerY = bitmap.height / 2
-        
-        var uniformPixels = 0
-        val centerPixel = bitmap.getPixel(centerX, centerY)
-        
-        // Sample pixels around the center
-        for (i in -sampleSize/2..sampleSize/2 step 10) {
-            for (j in -sampleSize/2..sampleSize/2 step 10) {
-                val x = (centerX + i).coerceIn(0, bitmap.width - 1)
-                val y = (centerY + j).coerceIn(0, bitmap.height - 1)
-                
-                val pixel = bitmap.getPixel(x, y)
-                val colorDiff = Math.abs(android.graphics.Color.red(pixel) - android.graphics.Color.red(centerPixel)) +
-                              Math.abs(android.graphics.Color.green(pixel) - android.graphics.Color.green(centerPixel)) +
-                              Math.abs(android.graphics.Color.blue(pixel) - android.graphics.Color.blue(centerPixel))
-                
-                if (colorDiff < 30) { // Threshold for "similar" colors
-                    uniformPixels++
-                }
-            }
-        }
-        
-        val totalSamples = (sampleSize / 10 + 1) * (sampleSize / 10 + 1)
-        val uniformityRatio = uniformPixels.toFloat() / totalSamples
-        
-        // If more than 80% of sampled pixels are similar, it might be a dialog
-        val isValid = uniformityRatio < 0.8
-        
-        Log.d(TAG, "Capture validation: uniformity ratio = $uniformityRatio, valid = $isValid")
-        return isValid
-    }
-
-    private fun createVirtualDisplay(screenWidth: Int, screenHeight: Int, screenDensityDpi: Int) {
-        virtualDisplay = mediaProjection?.createVirtualDisplay(
-            "ScreenCapture",
-            screenWidth,
-            screenHeight,
-            screenDensityDpi,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            imageReader?.surface,
-            null,
-            null
-        )
-    }
-
-    private fun stopScreenCapture() {
+    fun stopScreenCapture() {
         Log.d(TAG, "Stopping screen capture...")
-        isCapturing = false
-        serviceScope.cancel() // Cancel any pending coroutines
         virtualDisplay?.release()
         virtualDisplay = null
+        synchronized(imageLock) {
+            latestImage?.close()
+            latestImage = null
+        }
         imageReader?.close()
         imageReader = null
         mediaProjection?.unregisterCallback(mediaProjectionCallback)
@@ -472,6 +357,20 @@ class ScreenCaptureService : Service() {
         }
     }
 
+    // The engine is looked up on every call because the session can outlive the
+    // activity (and its FlutterEngine) that started it.
+    private fun sendToFlutter(method: String, arguments: Any?) {
+        mainHandler.post {
+            val flutterEngine = FlutterEngineCache.getInstance().get(MainActivity.ENGINE_ID)
+            if (flutterEngine == null) {
+                Log.w(TAG, "FlutterEngine not found in cache. Dropping '$method'.")
+                return@post
+            }
+            MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
+                .invokeMethod(method, arguments)
+        }
+    }
+
     override fun onBind(intent: Intent?): IBinder? {
         return null
     }
@@ -482,6 +381,7 @@ class ScreenCaptureService : Service() {
         imageReaderHandlerThread?.quitSafely()
         imageReaderHandlerThread = null
         imageReaderHandler = null
+        if (instance == this) instance = null
         Log.d(TAG, "ScreenCaptureService destroyed. ImageReader Thread quit.")
     }
 }

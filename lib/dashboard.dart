@@ -3,6 +3,7 @@ import 'dart:isolate';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:lingua_screen/pages/dictionary_page.dart';
 import 'package:lingua_screen/pages/quiz_page.dart';
 import 'package:lingua_screen/pages/home_page.dart';
@@ -55,6 +56,12 @@ class _DashboardWidgetState extends State<DashboardWidget> {
           _isCapturing = false;
         });
         log('Screenshot error: $code - $message');
+
+        // The recording session ended (e.g. stopped from the system UI),
+        // so the floating button can no longer capture anything.
+        if (code == 'SESSION_STOPPED' && await FlutterOverlayWindow.isActive()) {
+          await FlutterOverlayWindow.closeOverlay();
+        }
         break;
       default:
         log('Unhandled method: ${call.method}');
@@ -73,9 +80,10 @@ class _DashboardWidgetState extends State<DashboardWidget> {
     });
 
     try {
-      // Initiate the native flow. The actual screenshot path will come via a callback.
-      await _platform.invokeMethod('startScreenCapture');
-      log('startScreenCapture method invoked on native side.');
+      // Grab the latest frame of the screen recording session that was started
+      // when the floating button was enabled. The path will come via a callback.
+      await _platform.invokeMethod('captureScreenshot');
+      log('captureScreenshot method invoked on native side.');
       // The _screenshotStatus will be updated by _handleNativeMethodCall
     } on PlatformException catch (e) {
       log('Platform Exception initiating screenshot: ${e.code} - ${e.message}');

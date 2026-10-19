@@ -1,6 +1,7 @@
 import 'dart:developer';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 
 class HomePage extends StatefulWidget {
@@ -11,6 +12,8 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  static const _platform = MethodChannel('com.example.overlay_test/helper');
+
   bool isPermissionGranted = false;
   bool isOverlayEnabled = false;
 
@@ -22,11 +25,49 @@ class _HomePageState extends State<HomePage> {
         isPermissionGranted = value;
       }),
     );
-    FlutterOverlayWindow.isActive().then(
-      (bool value) => setState(() {
-        isOverlayEnabled = value;
-      }),
-    );
+    _syncOverlayState();
+  }
+
+  /// The floating button is only useful while the screen recording session is
+  /// running, so close it if the session has ended in the meantime.
+  Future<void> _syncOverlayState() async {
+    bool isActive = await FlutterOverlayWindow.isActive();
+    if (isActive && !(await _isScreenCaptureRunning())) {
+      await FlutterOverlayWindow.closeOverlay();
+      isActive = false;
+    }
+    if (!mounted) return;
+    setState(() {
+      isOverlayEnabled = isActive;
+    });
+  }
+
+  Future<bool> _isScreenCaptureRunning() async {
+    try {
+      return await _platform.invokeMethod<bool>('isScreenCaptureRunning') ??
+          false;
+    } on PlatformException catch (e) {
+      log('Platform Exception checking screen capture: ${e.code} - ${e.message}');
+      return false;
+    }
+  }
+
+  /// Starts the screen recording session. Returns false if the user denied it.
+  Future<bool> _startScreenCapture() async {
+    try {
+      return await _platform.invokeMethod<bool>('startScreenCapture') ?? false;
+    } on PlatformException catch (e) {
+      log('Platform Exception starting screen capture: ${e.code} - ${e.message}');
+      return false;
+    }
+  }
+
+  Future<void> _stopScreenCapture() async {
+    try {
+      await _platform.invokeMethod('stopScreenCapture');
+    } on PlatformException catch (e) {
+      log('Platform Exception stopping screen capture: ${e.code} - ${e.message}');
+    }
   }
 
   @override
@@ -115,10 +156,17 @@ class _HomePageState extends State<HomePage> {
                                 }
                                 if (await FlutterOverlayWindow.isActive()) {
                                   await FlutterOverlayWindow.closeOverlay();
+                                  await _stopScreenCapture();
                                   setState(() {
                                     isOverlayEnabled = false;
                                   });
                                 } else {
+                                  // Start screen recording before showing the
+                                  // floating button, so taps can capture instantly.
+                                  if (!(await _startScreenCapture())) {
+                                    log('Screen capture permission denied.');
+                                    return;
+                                  }
                                   await FlutterOverlayWindow.showOverlay(
                                     enableDrag: true,
                                     overlayTitle: 'Overlay',
