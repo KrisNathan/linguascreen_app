@@ -7,6 +7,7 @@ LinguaScreen is a language learning app which allows you to learn from reading b
 ## Backend Code
 
 https://github.com/MMADUs/linguascreen-api
+https://github.com/KrisNathan/linguascreen-api-go/
 
 ## Supported Platform
 
