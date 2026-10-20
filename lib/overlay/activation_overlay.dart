@@ -52,8 +52,11 @@ class _ActivationOverlayState extends State<ActivationOverlay> {
     return Material(
       color: Colors.transparent,
       elevation: 0.0,
-      child: GestureDetector(
-        onTap: () async {
+      // Not a GestureDetector: flutter_overlay_window 1.0.0 consumes the pointer
+      // up of a drag, so the dragged pointer never ends and a tap recognizer
+      // ignores every later tap. Only taps deliver a pointer up to Flutter.
+      child: Listener(
+        onPointerUp: (_) {
           log('Activate!!');
           _sendPort = IsolateNameServer.lookupPortByName(_kPortNameHome);
           _sendPort?.send('overlay_activate');

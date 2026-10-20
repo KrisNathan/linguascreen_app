@@ -8,17 +8,15 @@ import 'package:lingua_screen/pages/dictionary_page.dart';
 import 'package:lingua_screen/pages/quiz_page.dart';
 import 'package:lingua_screen/pages/home_page.dart';
 import 'package:lingua_screen/pages/ocr_page.dart';
+import 'package:lingua_screen/pages/course_page.dart';
+import 'package:lingua_screen/session.dart';
 
 class DashboardWidget extends StatefulWidget {
-  final String sessionToken;
-
-  const DashboardWidget({super.key, required this.sessionToken});
+  const DashboardWidget({super.key});
 
   @override
   State<DashboardWidget> createState() => _DashboardWidgetState();
 }
-
-List<Widget> pages = [DictionaryPage(), HomePage(), QuizPage()];
 
 class _DashboardWidgetState extends State<DashboardWidget> {
   int _selectedIndex = 1;
@@ -148,11 +146,55 @@ class _DashboardWidgetState extends State<DashboardWidget> {
     super.dispose();
   }
 
+  Future<void> _signOut() async {
+    if (await FlutterOverlayWindow.isActive()) {
+      await FlutterOverlayWindow.closeOverlay();
+    }
+    await Session.instance.signOut();
+    if (!mounted) return;
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
+  }
+
+  Widget _page(String? courseId) {
+    // Keyed by course, so switching courses reloads the course's data.
+    return switch (_selectedIndex) {
+      0 => DictionaryPage(key: ValueKey(courseId)),
+      2 => QuizPage(key: ValueKey(courseId)),
+      _ => const HomePage(),
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: Session.instance,
+      builder: (context, _) => _scaffold(Session.instance.course?.id),
+    );
+  }
+
+  Widget _scaffold(String? courseId) {
+    final course = Session.instance.course;
     return Scaffold(
-      appBar: AppBar(title: const Text('LinguaScreen')),
-      body: pages.elementAt(_selectedIndex),
+      appBar: AppBar(
+        title: const Text('LinguaScreen'),
+        actions: [
+          if (course != null)
+            ActionChip(
+              avatar: const Icon(Icons.translate, size: 18),
+              label: Text(course.learningLanguage.toUpperCase()),
+              tooltip: course.label,
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const CoursePage()),
+              ),
+            ),
+          PopupMenuButton<void>(
+            itemBuilder: (context) => [
+              PopupMenuItem(onTap: _signOut, child: const Text('Sign out')),
+            ],
+          ),
+        ],
+      ),
+      body: _page(courseId),
 
       bottomNavigationBar: NavigationBar(
         onDestinationSelected: (int index) {

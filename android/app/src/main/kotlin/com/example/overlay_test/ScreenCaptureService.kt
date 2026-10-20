@@ -213,8 +213,9 @@ class ScreenCaptureService : Service() {
         captureWidth = screenWidth
         captureHeight = screenHeight
 
-        // One image is held as the latest frame while the next one is acquired.
-        imageReader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 2).apply {
+        // One image is held as the latest frame, and acquireLatestImage() needs two
+        // more free buffers to drop stale frames, so maxImages must be at least 3.
+        imageReader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 3).apply {
             setOnImageAvailableListener({ reader -> handleImageAvailable(reader) }, imageReaderHandler)
         }
 

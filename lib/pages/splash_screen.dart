@@ -1,6 +1,16 @@
 import 'dart:developer';
+
 import 'package:flutter/material.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:lingua_screen/api/api_client.dart';
+import 'package:lingua_screen/session.dart';
+
+/// After signing in: restores the user's course and opens the dashboard, or
+/// the course picker if they have none yet. Throws [ApiException].
+Future<void> continueSignedIn(BuildContext context) async {
+  final course = await Session.instance.restoreCourse();
+  if (!context.mounted) return;
+  Navigator.pushReplacementNamed(context, course == null ? '/course' : '/dash');
+}
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -10,79 +20,52 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
-  final FlutterSecureStorage secureStorage = const FlutterSecureStorage();
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _initializeAppAndNavigate();
+    _start();
   }
 
-  Future<void> _initializeAppAndNavigate() async {
-    // Optional delay for visual effect of splash screen
-    // await Future.delayed(const Duration(seconds: 1));
-
-    bool determinedFirstLaunch = false;
-    bool determinedLoggedIn = false;
-    String? determinedSessionToken;
-
+  Future<void> _start() async {
+    setState(() => _error = null);
     try {
-      final results = await Future.wait([
-        secureStorage.read(key: 'not_first_launch'),
-        secureStorage.read(key: 'access_token'),
-      ]);
-
-      final notFirstLaunchValue = results[0];
-      final accessTokenValue = results[1];
-
-      if (notFirstLaunchValue == null || notFirstLaunchValue.isEmpty) {
-        determinedFirstLaunch = true;
-        // Write immediately, but don't necessarily wait if not critical for UI decision
-        // If it's critical for the next screen, then await it.
-        await secureStorage.write(key: 'not_first_launch', value: 'true');
-      } else {
-        determinedFirstLaunch = false;
+      if (!await ApiClient.instance.hasSession()) {
+        if (mounted) Navigator.pushReplacementNamed(context, '/login');
+        return;
       }
-
-      // Process session token
-      if (accessTokenValue == null || accessTokenValue.isEmpty) {
-        determinedLoggedIn = false;
+      if (mounted) await continueSignedIn(context);
+    } on ApiException catch (e) {
+      log('Restoring session failed: $e');
+      if (!mounted) return;
+      if (e.isUnauthorized) {
+        await ApiClient.instance.clearSession();
+        if (mounted) Navigator.pushReplacementNamed(context, '/login');
       } else {
-        log("Access Token from storage (Splash): $accessTokenValue");
-        determinedLoggedIn = true;
-        determinedSessionToken = accessTokenValue;
+        setState(() => _error = e.userMessage);
       }
-    } catch (e) {
-      log("Error during secure storage access: $e");
-      // Decide fallback behavior, e.g., go to login
-      determinedFirstLaunch =
-          false;
-      determinedLoggedIn = false;
-    }
-
-    // Ensure the widget is still mounted before attempting to navigate
-    if (!mounted) return;
-
-    if (determinedFirstLaunch) {
-      Navigator.pushReplacementNamed(context, '/login');
-    } else if (!determinedLoggedIn) {
-      Navigator.pushReplacementNamed(context, '/login');
-    } else {
-      // Pass the session token as an argument to the dashboard
-      Navigator.pushReplacementNamed(
-        context,
-        '/dash',
-        arguments: determinedSessionToken,
-      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final error = _error;
     return Scaffold(
       body: Center(
-        child: CircularProgressIndicator(
-        ),
+        child: error == null
+            ? const CircularProgressIndicator()
+            : Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(error, textAlign: TextAlign.center),
+                    const SizedBox(height: 16),
+                    FilledButton(onPressed: _start, child: const Text('Retry')),
+                  ],
+                ),
+              ),
       ),
     );
   }

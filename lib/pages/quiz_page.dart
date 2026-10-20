@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'dart:convert';
 import 'dart:math';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:lingua_screen/api/api_client.dart';
+import 'package:lingua_screen/session.dart';
 
 // Model classes for quiz data
 class QuizItem {
@@ -83,10 +81,6 @@ class _QuizPageState extends State<QuizPage> {
   bool isLoading = true;
   String errorMessage = '';
 
-  // API configuration
-  static final String apiBaseUrl = dotenv.env['LINGUASCREEN_API_URL']  ?? 'http://10.0.2.2:8000';
-  final FlutterSecureStorage secureStorage = const FlutterSecureStorage();
-
   // Default fallback quiz data
   final List<QuizItem> fallbackQuizData = [
     QuizItem(
@@ -156,60 +150,34 @@ class _QuizPageState extends State<QuizPage> {
     }
 
     try {
-      final token = await secureStorage.read(key: 'access_token');
-      final response = await http.get(
-        Uri.parse('$apiBaseUrl/sentence'),
-        headers: {
-          'Content-Type': 'application/json',
-          if (token != null) 'Authorization': 'Bearer $token',
-        },
-      );
+      final courseId = Session.instance.course?.id;
+      if (courseId == null) throw Exception('No course selected');
 
+      // TODO: switch to POST /quiz/start and /quiz/submit once the API has them.
+      final page = await ApiClient.instance.listVocabs(courseId, limit: 100);
       if (!mounted) return; // Check mounted after async operation
 
-      if (response.statusCode == 200) {
-        final dynamic jsonData = jsonDecode(response.body);
-        List<Map<String, dynamic>> wordsData = [];
-        
-        if (jsonData is List) {
-          wordsData = List<Map<String, dynamic>>.from(jsonData);
-        } else if (jsonData is Map<String, dynamic>) {
-          final List<dynamic>? words = jsonData['words'] ?? jsonData['data'];
-          if (words != null) {
-            wordsData = List<Map<String, dynamic>>.from(words);
-          }
-        }
-
-        if (wordsData.isNotEmpty) {
-          // Convert word entries to quiz items
-          List<QuizItem> fetchedQuizData = [];
-          Set<String> meanings = {};
-          
-          for (var wordEntry in wordsData) {
-            final quizItem = QuizItem.fromWordEntry(wordEntry);
-            if (quizItem.correctAnswer != 'No meaning available' && 
-                quizItem.sentence != 'No sentence available') {
-              fetchedQuizData.add(quizItem);
-              meanings.add(quizItem.correctAnswer);
-            }
-          }
-          
-          // Shuffle and limit to reasonable number for quiz
-          fetchedQuizData.shuffle();
-          
-          if (mounted) {
-            setState(() {
-              quizData = fetchedQuizData.take(10).toList(); // Limit to 10 questions
-              allMeanings = meanings.toList();
-              isLoading = false;
-            });
-          }
-        } else {
-          throw Exception('No valid quiz data found');
-        }
-      } else {
-        throw Exception('Failed to load quiz data: ${response.statusCode}');
+      final fetchedQuizData = [
+        for (final vocab in page.items)
+          if (vocab.translation.isNotEmpty)
+            QuizItem(
+              word: vocab.dictForm,
+              sentence: vocab.reading == vocab.dictForm ? '' : vocab.reading,
+              correctAnswer: vocab.translation,
+              options: [vocab.translation],
+            ),
+      ];
+      if (fetchedQuizData.isEmpty) {
+        throw Exception('No saved words to practice yet');
       }
+
+      // Shuffle and limit to reasonable number for quiz
+      fetchedQuizData.shuffle();
+      setState(() {
+        quizData = fetchedQuizData.take(10).toList(); // Limit to 10 questions
+        allMeanings = {for (final q in fetchedQuizData) q.correctAnswer}.toList();
+        isLoading = false;
+      });
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -521,30 +489,32 @@ class _QuizPageState extends State<QuizPage> {
                       
                       const SizedBox(height: 16.0),
                       
-                      // Sentence Context
-                      Text(
-                        'From sentence:',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-                        ),
-                      ),
-                      const SizedBox(height: 8.0),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12.0),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surface,
-                          borderRadius: BorderRadius.circular(8.0),
-                          border: Border.all(
-                            color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                      // Reading (the sentence field holds it)
+                      if (currentQuestion.sentence.isNotEmpty) ...[
+                        Text(
+                          'Reading:',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
                           ),
                         ),
-                        child: Text(
-                          currentQuestion.sentence,
-                          style: const TextStyle(fontSize: 16),
+                        const SizedBox(height: 8.0),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12.0),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surface,
+                            borderRadius: BorderRadius.circular(8.0),
+                            border: Border.all(
+                              color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                            ),
+                          ),
+                          child: Text(
+                            currentQuestion.sentence,
+                            style: const TextStyle(fontSize: 16),
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),

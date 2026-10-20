@@ -1,79 +1,9 @@
-import 'dart:developer';
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:lingua_screen/api/api_client.dart';
+import 'package:lingua_screen/api/models.dart';
+import 'package:lingua_screen/session.dart';
 
-import 'package:lingua_screen/models/saved_words_response.dart';
-import 'package:lingua_screen/models/saved_word.dart';
-
-class WordEntry {
-  final String word;
-  final List<SentenceData> sentences;
-
-  WordEntry({required this.word, required this.sentences});
-
-  factory WordEntry.fromJson(Map<String, dynamic> json) {
-    return WordEntry(
-      word: json['word'] ?? '',
-      sentences:
-          (json['sentences'] as List<dynamic>?)
-              ?.map((s) => SentenceData.fromJson(s))
-              .toList() ??
-          [],
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'word': word,
-      'sentences': sentences.map((s) => s.toJson()).toList(),
-    };
-  }
-}
-
-class SentenceData {
-  final String originalSentence;
-  final String translatedSentence;
-  final String explanation;
-
-  SentenceData({
-    required this.originalSentence, 
-    required this.translatedSentence,
-    required this.explanation,
-  });
-
-  // Legacy constructor for backward compatibility
-  SentenceData.legacy({
-    required String sentence,
-    required String wordMeaning,
-  }) : originalSentence = sentence,
-       translatedSentence = '',
-       explanation = wordMeaning;
-
-  factory SentenceData.fromJson(Map<String, dynamic> json) {
-    return SentenceData(
-      originalSentence: json['original_sentence'] ?? json['sentence'] ?? '',
-      translatedSentence: json['translated_sentence'] ?? '',
-      explanation: json['explanation'] ?? json['word_meaning'] ?? '',
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'original_sentence': originalSentence,
-      'translated_sentence': translatedSentence,
-      'explanation': explanation,
-    };
-  }
-
-  // Legacy getter for backward compatibility
-  String get sentence => originalSentence;
-  String get wordMeaning => explanation;
-}
-
+/// The saved vocabs of the current course, last saved first.
 class DictionaryPage extends StatefulWidget {
   const DictionaryPage({super.key});
 
@@ -82,528 +12,282 @@ class DictionaryPage extends StatefulWidget {
 }
 
 class _DictionaryPageState extends State<DictionaryPage> {
-  List<WordEntry> words = [];
-  Set<int> expandedItems = {};
-  String searchQuery = '';
-  bool isLoading = false;
-  String errorMessage = '';
+  final _api = ApiClient.instance;
+  final _scroll = ScrollController();
 
-  static final String apiBaseUrl = dotenv.env['LINGUASCREEN_API_URL'] ?? 'http://10.0.2.2:8000';
-  final FlutterSecureStorage secureStorage = const FlutterSecureStorage();
+  final List<VocabItem> _items = [];
+  String? _cursor;
+  bool _hasMore = true;
+  bool _loading = false;
+  String? _error;
+  String _query = '';
+
+  /// Occurrences of expanded vocabs, by vocab id.
+  final Map<String, Future<VocabDetail>> _details = {};
+
+  String? get _courseId => Session.instance.course?.id;
 
   @override
   void initState() {
     super.initState();
-    fetchWords(); // Load data when page opens
+    _scroll.addListener(() {
+      if (_scroll.position.extentAfter < 400) _loadMore();
+    });
+    _loadMore();
   }
 
-  // Fetch words from API
-  Future<void> fetchWords() async {
-    // Check if widget is still mounted before starting
-    if (!mounted) return;
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
 
+  Future<void> _refresh() async {
     setState(() {
-      isLoading = true;
-      errorMessage = '';
+      _items.clear();
+      _details.clear();
+      _cursor = null;
+      _hasMore = true;
     });
+    await _loadMore();
+  }
+
+  Future<void> _loadMore() async {
+    final courseId = _courseId;
+    if (_loading || !_hasMore || courseId == null) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final page = await _api.listVocabs(courseId, cursor: _cursor);
+      if (!mounted) return;
+      setState(() {
+        _items.addAll(page.items);
+        _cursor = page.nextCursor;
+        _hasMore = page.nextCursor != null;
+      });
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.userMessage);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  /// Search only covers the loaded pages; the API has no search yet.
+  List<VocabItem> get _filtered {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return _items;
+    return _items
+        .where(
+          (v) =>
+              v.dictForm.toLowerCase().contains(q) ||
+              v.reading.toLowerCase().contains(q) ||
+              v.translation.toLowerCase().contains(q),
+        )
+        .toList();
+  }
+
+  Future<void> _delete(VocabItem vocab) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete word'),
+        content: Text(
+          'Delete "${vocab.dictForm}" and its example sentences? Its practice '
+          'history is lost too.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
 
     try {
-      final token = await secureStorage.read(key: 'access_token');
-      log('$token');
-      final response = await http.get(
-        Uri.parse('$apiBaseUrl/sentence'),
-        headers: {
-          'Content-Type': 'application/json',
-          if (token != null) 'Authorization': 'Bearer $token',
-        },
-      );
-      log(response.body);
-
-      // Check if widget is still mounted before calling setState
+      await _api.deleteVocab(vocab.id);
       if (!mounted) return;
-
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> jsonData = jsonDecode(response.body);
-        SavedWordsResponse savedWordsResponse =
-            SavedWordsResponse.fromJson(jsonData);
-
-        // Map SavedWordsResponse.result to WordEntry
-        List<WordEntry> wordsList = _mapSavedWordsToWordEntries(savedWordsResponse.result);
-
-        if (!mounted) return;
-        setState(() {
-          words = wordsList;
-          isLoading = false;
-        });
-      } else {
-        throw Exception('Failed to load words: ${response.statusCode}');
-      }
-    } catch (e) {
-      if (!mounted) return;
-
       setState(() {
-        errorMessage = 'Error loading words: $e';
-        isLoading = false;
+        _items.removeWhere((v) => v.id == vocab.id);
+        _details.remove(vocab.id);
       });
+      _snack('Word deleted');
+    } on ApiException catch (e) {
+      _snack(e.userMessage);
     }
   }
 
-  // Helper method to map SavedWord list to WordEntry list
-  List<WordEntry> _mapSavedWordsToWordEntries(List<SavedWord> savedWords) {
-    // Group saved words by their original text
-    Map<String, List<SavedWord>> groupedWords = {};
-    
-    for (SavedWord savedWord in savedWords) {
-      String key = savedWord.original.toLowerCase().trim();
-      if (groupedWords.containsKey(key)) {
-        groupedWords[key]!.add(savedWord);
-      } else {
-        groupedWords[key] = [savedWord];
-      }
-    }
-
-    // Convert grouped words to WordEntry objects
-    return groupedWords.entries.map((entry) {
-      String word = entry.key;
-      List<SavedWord> wordInstances = entry.value;
-      
-      List<SentenceData> sentences = wordInstances.map((savedWord) {
-        return SentenceData(
-          originalSentence: savedWord.original,
-          translatedSentence: savedWord.translation,
-          explanation: savedWord.explanation,
-        );
-      }).toList();
-
-      return WordEntry(
-        word: wordInstances.first.original, // Use the original casing
-        sentences: sentences,
-      );
-    }).toList();
-  }
-
-  // Delete word via API
-  Future<void> deleteWord(int index) async {
-    if (index >= filteredWords.length) {
+  Future<void> _editTranslation(VocabItem vocab) async {
+    final controller = TextEditingController(text: vocab.translation);
+    final translation = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(vocab.dictForm),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 200,
+          decoration: const InputDecoration(labelText: 'Translation'),
+          onSubmitted: (v) => Navigator.pop(context, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (translation == null ||
+        translation.trim().isEmpty ||
+        translation == vocab.translation) {
       return;
     }
 
-    final wordToDelete = filteredWords[index];
-
     try {
-      final token = await secureStorage.read(key: 'access_token');
-      final response = await http.delete(
-        Uri.parse(
-          '$apiBaseUrl/words/${Uri.encodeComponent(wordToDelete.word)}',
-        ),
-        headers: {
-          'Content-Type': 'application/json',
-          if (token != null) 'Authorization': 'Bearer $token',
-        },
-      );
-
-      if (response.statusCode == 200 || response.statusCode == 204) {
-        // Refresh the entire list instead of removing by index
-        await fetchWords();
-        if (mounted) {
-          setState(() {
-            expandedItems.clear(); // Clear expanded items after refresh
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Word deleted successfully!')),
-          );
-        }
-      } else {
-        throw Exception('Failed to delete word: ${response.statusCode}');
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error deleting word: $e')));
-      }
+      final updated = await _api.updateVocabTranslation(vocab.id, translation);
+      if (!mounted) return;
+      setState(() {
+        final i = _items.indexWhere((v) => v.id == vocab.id);
+        if (i >= 0) _items[i] = updated;
+      });
+    } on ApiException catch (e) {
+      _snack(e.userMessage);
     }
   }
 
-  List<WordEntry> get filteredWords {
-    if (searchQuery.isEmpty) return words;
-    return words.where((wordData) {
-      return wordData.word.toLowerCase().contains(searchQuery.toLowerCase()) ||
-          wordData.sentences.any(
-            (sentence) => 
-                sentence.originalSentence.toLowerCase().contains(searchQuery.toLowerCase()) ||
-                sentence.translatedSentence.toLowerCase().contains(searchQuery.toLowerCase()) ||
-                sentence.explanation.toLowerCase().contains(searchQuery.toLowerCase()),
-          );
-    }).toList();
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final items = _filtered;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Dictionary'),
-        backgroundColor: Theme.of(context).colorScheme.surface,
+        backgroundColor: theme.colorScheme.surface,
         elevation: 0,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: fetchWords,
+            onPressed: _refresh,
             tooltip: 'Refresh',
-          ),
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: _showAddWordDialog,
-            tooltip: 'Add Word',
           ),
         ],
       ),
       body: Column(
         children: [
-          // Error message
-          if (errorMessage.isNotEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16.0),
-              color: Colors.red[100],
-              child: Row(
-                children: [
-                  Icon(Icons.error, color: Colors.red[800]),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      errorMessage,
-                      style: TextStyle(color: Colors.red[800]),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () => setState(() => errorMessage = ''),
-                    child: const Text('Dismiss'),
-                  ),
-                ],
-              ),
-            ),
-
-          // Search Bar
-          Container(
-            padding: const EdgeInsets.all(16.0),
+          Padding(
+            padding: const EdgeInsets.all(16),
             child: TextField(
-              onChanged: (value) {
-                setState(() {
-                  searchQuery = value;
-                });
-              },
+              onChanged: (value) => setState(() => _query = value),
               decoration: InputDecoration(
-                hintText: 'Search words, translations, or explanations...',
+                hintText: 'Search words or translations...',
                 prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12.0),
+                  borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
                 ),
                 filled: true,
-                fillColor: Theme.of(context).colorScheme.primaryContainer
-                    .withOpacity(0.3),
+                fillColor: theme.colorScheme.primaryContainer.withValues(
+                  alpha: 0.3,
+                ),
               ),
             ),
           ),
-
-          // Loading indicator
-          if (isLoading)
-            const Padding(
-              padding: EdgeInsets.all(20.0),
-              child: CircularProgressIndicator(),
+          if (_error != null)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: theme.colorScheme.errorContainer,
+              child: Row(
+                children: [
+                  Expanded(child: Text(_error!)),
+                  TextButton(onPressed: _loadMore, child: const Text('Retry')),
+                ],
+              ),
             ),
-
-          // Words List
           Expanded(
-            child:
-                isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : filteredWords.isEmpty
-                    ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.search_off,
-                            size: 64,
-                            color: Theme.of(context).colorScheme.onSurface
-                                .withOpacity(0.5),
+            child: RefreshIndicator(
+              onRefresh: _refresh,
+              child: items.isEmpty && !_loading
+                  ? ListView(
+                      children: [
+                        const SizedBox(height: 80),
+                        Icon(
+                          Icons.search_off,
+                          size: 64,
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.5,
                           ),
-                          const SizedBox(height: 16),
-                          Text(
-                            words.isEmpty
-                                ? 'No words available'
-                                : 'No words found',
-                            style: TextStyle(
-                              fontSize: 18,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withOpacity(
-                                0.7,
-                              ),
-                            ),
-                          ),
-                          if (words.isEmpty) ...[
-                            const SizedBox(height: 16),
-                            ElevatedButton(
-                              onPressed: fetchWords,
-                              child: const Text('Retry'),
-                            ),
-                          ],
-                        ],
-                      ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          _items.isEmpty
+                              ? 'No saved words yet.\nTap a word in a screenshot to save it.'
+                              : 'No words found',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.titleMedium,
+                        ),
+                      ],
                     )
-                    : RefreshIndicator(
-                      onRefresh: fetchWords,
-                      child: ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                        itemCount: filteredWords.length,
-                        itemBuilder: (context, index) {
-                          final wordData = filteredWords[index];
-                          final word = wordData.word;
-                          final sentences = wordData.sentences;
-                          final wordKey = '${word}_${sentences.length}';
-                          final isExpanded = expandedItems.contains(
-                            wordKey.hashCode,
+                  : ListView.builder(
+                      controller: _scroll,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: items.length + (_loading ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (index == items.length) {
+                          return const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Center(child: CircularProgressIndicator()),
                           );
-
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8.0),
-                            child: Card.filled(
-                              color:
-                                  Theme.of(
-                                    context,
-                                  ).colorScheme.primaryContainer,
-                              child: Column(
-                                children: [
-                                  // Word Header
-                                  InkWell(
-                                    onTap: () {
-                                      setState(() {
-                                        if (isExpanded) {
-                                          expandedItems.remove(
-                                            wordKey.hashCode,
-                                          );
-                                        } else {
-                                          expandedItems.add(wordKey.hashCode);
-                                        }
-                                      });
-                                    },
-                                    borderRadius: BorderRadius.circular(12.0),
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(16.0),
-                                      child: Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              word,
-                                              style: const TextStyle(
-                                                fontSize: 18,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ),
-                                          IconButton(
-                                            icon: const Icon(
-                                              Icons.delete_outline,
-                                            ),
-                                            onPressed:
-                                                () => _showDeleteConfirmation(
-                                                  index,
-                                                ),
-                                            tooltip: 'Delete word',
-                                          ),
-                                          Icon(
-                                            isExpanded
-                                                ? Icons.keyboard_arrow_up
-                                                : Icons.keyboard_arrow_down,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-
-                                  // Expandable Sentences
-                                  if (isExpanded) ...[
-                                    const Divider(height: 1),
-                                    ...sentences.asMap().entries.map((entry) {
-                                      final sentenceIndex = entry.key;
-                                      final sentenceData = entry.value;
-
-                                      return Container(
-                                        width: double.infinity,
-                                        padding: const EdgeInsets.all(16.0),
-                                        decoration: BoxDecoration(
-                                          color:
-                                              sentenceIndex.isEven
-                                                  ? Colors.transparent
-                                                  : Theme.of(
-                                                    context,
-                                                  ).colorScheme.surface.withOpacity(
-                                                    0.3,
-                                                  ),
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            // Original Sentence
-                                            Container(
-                                              padding: const EdgeInsets.all(
-                                                12.0,
-                                              ),
-                                              decoration: BoxDecoration(
-                                                color:
-                                                    Theme.of(
-                                                      context,
-                                                    ).colorScheme.surface,
-                                                borderRadius:
-                                                    BorderRadius.circular(8.0),
-                                                border: Border.all(
-                                                  color: Theme.of(
-                                                    context,
-                                                  ).colorScheme.outline.withOpacity(
-                                                    0.2,
-                                                  ),
-                                                ),
-                                              ),
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  Row(
-                                                    children: [
-                                                      Icon(
-                                                        Icons.language,
-                                                        size: 16,
-                                                        color: Theme.of(context).colorScheme.primary,
-                                                      ),
-                                                      const SizedBox(width: 8),
-                                                      Text(
-                                                        'Original',
-                                                        style: TextStyle(
-                                                          fontSize: 12,
-                                                          fontWeight: FontWeight.bold,
-                                                          color: Theme.of(context).colorScheme.primary,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  const SizedBox(height: 8),
-                                                  Text(
-                                                    sentenceData.originalSentence,
-                                                    style: const TextStyle(fontSize: 16),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                            
-                                            if (sentenceData.translatedSentence.isNotEmpty) ...[
-                                              const SizedBox(height: 8.0),
-                                              // Translated Sentence
-                                              Container(
-                                                padding: const EdgeInsets.all(12.0),
-                                                decoration: BoxDecoration(
-                                                  color: Theme.of(context).colorScheme.secondaryContainer,
-                                                  borderRadius: BorderRadius.circular(8.0),
-                                                  border: Border.all(
-                                                    color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
-                                                  ),
-                                                ),
-                                                child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  children: [
-                                                    Row(
-                                                      children: [
-                                                        Icon(
-                                                          Icons.translate,
-                                                          size: 16,
-                                                          color: Theme.of(context).colorScheme.secondary,
-                                                        ),
-                                                        const SizedBox(width: 8),
-                                                        Text(
-                                                          'Translation',
-                                                          style: TextStyle(
-                                                            fontSize: 12,
-                                                            fontWeight: FontWeight.bold,
-                                                            color: Theme.of(context).colorScheme.secondary,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                    const SizedBox(height: 8),
-                                                    Text(
-                                                      sentenceData.translatedSentence,
-                                                      style: const TextStyle(fontSize: 16),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ],
-
-                                            if (sentenceData.explanation.isNotEmpty) ...[
-                                              const SizedBox(height: 8.0),
-                                              // Explanation
-                                              Row(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Icon(
-                                                    Icons.lightbulb_outline,
-                                                    size: 16,
-                                                    color:
-                                                        Theme.of(
-                                                          context,
-                                                        ).colorScheme.primary,
-                                                  ),
-                                                  const SizedBox(width: 8.0),
-                                                  Expanded(
-                                                    child: Text(
-                                                      sentenceData.explanation,
-                                                      style: TextStyle(
-                                                        fontSize: 14,
-                                                        color: Theme.of(context)
-                                                            .colorScheme
-                                                            .onSurface
-                                                            .withOpacity(0.8),
-                                                        fontStyle: FontStyle.italic,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ],
-                                          ],
-                                        ),
-                                      );
-                                    }),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+                        }
+                        return _VocabCard(
+                          key: ValueKey(items[index].id),
+                          vocab: items[index],
+                          detail: _details[items[index].id],
+                          onExpand: (vocab) => setState(() {
+                            _details[vocab.id] ??= _api.getVocab(vocab.id);
+                          }),
+                          onEdit: _editTranslation,
+                          onDelete: _delete,
+                        );
+                      },
                     ),
+            ),
           ),
-
-          // Words Count Summary
-          Container(
-            padding: const EdgeInsets.all(16.0),
+          Padding(
+            padding: const EdgeInsets.all(16),
             child: Card.filled(
-              color: Theme.of(context).colorScheme.primaryContainer,
+              color: theme.colorScheme.primaryContainer,
               child: Padding(
-                padding: const EdgeInsets.all(16.0),
+                padding: const EdgeInsets.all(16),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
-                      Icons.book,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    const SizedBox(width: 8.0),
+                    Icon(Icons.book, color: theme.colorScheme.primary),
+                    const SizedBox(width: 8),
                     Text(
-                      '${filteredWords.length} words saved',
+                      '${_items.length}${_hasMore ? '+' : ''} words saved',
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ],
@@ -615,107 +299,209 @@ class _DictionaryPageState extends State<DictionaryPage> {
       ),
     );
   }
-
-  // Dialog to add new word
-  void _showAddWordDialog() {
-    final wordController = TextEditingController();
-    final sentenceController = TextEditingController();
-    final meaningController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder:
-          (context) => AddWordDialog(
-            wordController: wordController,
-            sentenceController: sentenceController,
-            meaningController: meaningController,
-          ),
-    );
-  }
-
-  // Confirmation dialog for delete
-  void _showDeleteConfirmation(int index) {
-    final wordToDelete = filteredWords[index];
-    showDialog(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Delete Word'),
-            content: Text(
-              'Are you sure you want to delete "${wordToDelete.word}"? (Coming Soon)',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  // deleteWord(index);
-                },
-                style: TextButton.styleFrom(foregroundColor: Colors.red),
-                child: const Text('Delete'),
-              ),
-            ],
-          ),
-    );
-  }
 }
 
-class AddWordDialog extends StatelessWidget {
-  const AddWordDialog({
+class _VocabCard extends StatefulWidget {
+  const _VocabCard({
     super.key,
-    required this.wordController,
-    required this.sentenceController,
-    required this.meaningController,
+    required this.vocab,
+    required this.detail,
+    required this.onExpand,
+    required this.onEdit,
+    required this.onDelete,
   });
 
-  final TextEditingController wordController;
-  final TextEditingController sentenceController;
-  final TextEditingController meaningController;
+  final VocabItem vocab;
+  final Future<VocabDetail>? detail;
+  final ValueChanged<VocabItem> onExpand;
+  final ValueChanged<VocabItem> onEdit;
+  final ValueChanged<VocabItem> onDelete;
+
+  @override
+  State<_VocabCard> createState() => _VocabCardState();
+}
+
+class _VocabCardState extends State<_VocabCard> {
+  bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Add New Word'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
+    final theme = Theme.of(context);
+    final vocab = widget.vocab;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Card.filled(
+        color: theme.colorScheme.primaryContainer,
+        child: Column(
+          children: [
+            InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () {
+                setState(() => _expanded = !_expanded);
+                if (_expanded) widget.onExpand(vocab);
+              },
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text.rich(
+                            TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: vocab.dictForm,
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                if (vocab.reading.isNotEmpty &&
+                                    vocab.reading != vocab.dictForm)
+                                  TextSpan(
+                                    text: '  ${vocab.reading}',
+                                    style: theme.textTheme.bodyMedium,
+                                  ),
+                              ],
+                            ),
+                          ),
+                          Text(vocab.translation),
+                          const SizedBox(height: 4),
+                          Text(
+                            _progressLabel(vocab),
+                            style: theme.textTheme.labelSmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: () => widget.onEdit(vocab),
+                      tooltip: 'Edit translation',
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () => widget.onDelete(vocab),
+                      tooltip: 'Delete word',
+                    ),
+                    Icon(
+                      _expanded
+                          ? Icons.keyboard_arrow_up
+                          : Icons.keyboard_arrow_down,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (_expanded) ...[
+              const Divider(height: 1),
+              FutureBuilder(
+                future: widget.detail,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState != ConnectionState.done) {
+                    return const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  if (snapshot.hasError) {
+                    final error = snapshot.error;
+                    return Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        error is ApiException
+                            ? error.userMessage
+                            : 'Could not load the examples.',
+                      ),
+                    );
+                  }
+                  return Column(
+                    children: [
+                      for (final o in snapshot.data!.occurrences)
+                        _OccurrenceTile(occurrence: o),
+                    ],
+                  );
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _progressLabel(VocabItem vocab) {
+    final examples =
+        '${vocab.occurrenceCount} example${vocab.occurrenceCount == 1 ? '' : 's'}';
+    return switch (vocab.progress.state) {
+      'known' => 'Known · $examples',
+      'learning' => 'Learning, streak ${vocab.progress.streak} · $examples',
+      _ => 'New · $examples',
+    };
+  }
+}
+
+class _OccurrenceTile extends StatelessWidget {
+  const _OccurrenceTile({required this.occurrence});
+
+  final Occurrence occurrence;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final o = occurrence;
+    final runes = o.sentence.runes.toList();
+    String slice(int a, int b) => String.fromCharCodes(runes.sublist(a, b));
+    final validSpan =
+        0 <= o.span.$1 && o.span.$1 < o.span.$2 && o.span.$2 <= runes.length;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // The saved word highlighted inside its sentence.
+          Text.rich(
+            TextSpan(
+              style: const TextStyle(fontSize: 16),
+              children: validSpan
+                  ? [
+                      TextSpan(text: slice(0, o.span.$1)),
+                      TextSpan(
+                        text: slice(o.span.$1, o.span.$2),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          backgroundColor: theme.colorScheme.primaryContainer,
+                        ),
+                      ),
+                      TextSpan(text: slice(o.span.$2, runes.length)),
+                    ]
+                  : [TextSpan(text: o.sentence)],
+            ),
+          ),
+          if (o.sentenceTranslation.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              o.sentenceTranslation,
+              style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ],
+          const SizedBox(height: 4),
           Text(
-            'This Feature is Coming Soon.',
-            style: Theme.of(context).textTheme.labelSmall,
-          ),
-          TextField(
-            controller: wordController,
-            decoration: const InputDecoration(labelText: 'Word'),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: sentenceController,
-            decoration: const InputDecoration(labelText: 'Sentence'),
-            maxLines: 2,
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: meaningController,
-            decoration: const InputDecoration(labelText: 'Meaning'),
-            maxLines: 2,
+            '${o.surface} · ${o.translation}',
+            style: theme.textTheme.labelMedium,
           ),
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () {
-            Navigator.pop(context);
-          },
-          child: const Text('Add'),
-        ),
-      ],
     );
   }
 }
