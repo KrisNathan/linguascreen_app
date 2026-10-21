@@ -33,10 +33,10 @@ class _DashboardWidgetState extends State<DashboardWidget> {
         final filePath = call.arguments as String?;
         setState(() {
           _isCapturing = false;
-          if (filePath != null) {
-            _showOCRPage(filePath);
-          }
         });
+        if (filePath != null) {
+          _showOCRPage(filePath);
+        }
         log('Screenshot success: $filePath');
         _showOverlayButton();
 
@@ -114,10 +114,17 @@ class _DashboardWidgetState extends State<DashboardWidget> {
     _sendPort?.send('overlay_show');
   }
 
-  void _showOCRPage(String imagePath) {
-    Navigator.of(context).push(
+  Future<void> _showOCRPage(String imagePath) async {
+    await Navigator.of(context).push(
       MaterialPageRoute(builder: (context) => OCRPage(imagePath: imagePath)),
     );
+    // Leaving the OCR page returns to the app the screenshot was taken from,
+    // not to our home page.
+    try {
+      await _platform.invokeMethod('moveTaskToBack');
+    } on PlatformException catch (e) {
+      log('Platform Exception moving task to back: ${e.code} - ${e.message}');
+    }
   }
 
   static const String _kPortNameOverlay = 'OVERLAY';

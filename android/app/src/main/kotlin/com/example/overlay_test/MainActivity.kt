@@ -51,6 +51,10 @@ class MainActivity: FlutterActivity() {
                 "bringAppToForeground" -> {
                     bringAppToForeground(call, result)
                 }
+                "moveTaskToBack" -> {
+                    // Reveals whatever app was in front before we were brought forward.
+                    result.success(moveTaskToBack(true))
+                }
                 "handleSumMethod" -> { // Renamed method
                     handleSumMethod(call, result)
                 }
