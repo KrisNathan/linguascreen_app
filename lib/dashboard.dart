@@ -21,7 +21,8 @@ class DashboardWidget extends StatefulWidget {
   State<DashboardWidget> createState() => _DashboardWidgetState();
 }
 
-class _DashboardWidgetState extends State<DashboardWidget> {
+class _DashboardWidgetState extends State<DashboardWidget>
+    with WidgetsBindingObserver {
   int _selectedIndex = 0;
 
   static const _tabs = ['Today', 'Words', 'Practice'];
@@ -108,10 +109,30 @@ class _DashboardWidgetState extends State<DashboardWidget> {
 
   /// The floating button hides itself to stay out of the screenshot; this
   /// brings it back once the capture is over.
-  void _showOverlayButton() {
+  void _showOverlayButton() => _sendToOverlay('overlay_show');
+
+  /// The floating button stays out of the way while the app is in front, and
+  /// is only shown over other apps.
+  void _syncOverlayAway() {
+    final inFront =
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    _sendToOverlay(inFront ? 'overlay_away' : 'overlay_back');
+  }
+
+  void _sendToOverlay(String message) {
     // Looked up each time: a reopened overlay registers a new port.
     _sendPort = IsolateNameServer.lookupPortByName(_kPortNameOverlay);
-    _sendPort?.send('overlay_show');
+    _sendPort?.send(message);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Not on inactive: that is also a dialog or the notification shade over
+    // the app.
+    if (state == AppLifecycleState.resumed ||
+        state == AppLifecycleState.hidden) {
+      _syncOverlayAway();
+    }
   }
 
   Future<void> _showOCRPage(String imagePath) async {
@@ -139,6 +160,7 @@ class _DashboardWidgetState extends State<DashboardWidget> {
     super.initState();
 
     _platform.setMethodCallHandler(_handleNativeMethodCall);
+    WidgetsBinding.instance.addObserver(this);
 
     // unregister existing old port:
     // dispose() may not be called properly in the previous session.
@@ -154,6 +176,8 @@ class _DashboardWidgetState extends State<DashboardWidget> {
       log("message from OVERLAY: $message");
       if (message == 'overlay_activate') {
         _takeScreenshot();
+      } else if (message == 'overlay_ready') {
+        _syncOverlayAway();
       }
     });
 
@@ -163,6 +187,7 @@ class _DashboardWidgetState extends State<DashboardWidget> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _receivePort.close();
     IsolateNameServer.removePortNameMapping(_kPortNameHome);
 

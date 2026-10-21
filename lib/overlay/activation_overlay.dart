@@ -4,13 +4,16 @@ import 'dart:isolate';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:lingua_screen/theme.dart';
 
 /// The floating button shown over other apps. Tapping it asks the app to
 /// capture the screen.
 ///
 /// The button hides itself before asking, so it is not in the screenshot,
-/// and comes back when the app sends `overlay_show`.
+/// and comes back when the app sends `overlay_show`. It also stays away while
+/// the app itself is in front: the app sends `overlay_away` and
+/// `overlay_back` as it comes and goes.
 class ActivationOverlay extends StatefulWidget {
   const ActivationOverlay({super.key});
 
@@ -32,6 +35,10 @@ class _ActivationOverlayState extends State<ActivationOverlay> {
   bool _hidden = false;
   Timer? _showTimer;
 
+  /// Whether the app is in front. Starts away until the app says otherwise,
+  /// since the button is usually turned on from inside the app.
+  bool _away = true;
+
   @override
   void initState() {
     super.initState();
@@ -48,8 +55,22 @@ class _ActivationOverlayState extends State<ActivationOverlay> {
 
     _receivePort.listen((message) {
       log("message from UI: $message");
-      if (message == 'overlay_show') _show();
+      switch (message) {
+        case 'overlay_show':
+          _show();
+        case 'overlay_away':
+          _setAway(true);
+        case 'overlay_back':
+          _setAway(false);
+      }
     });
+
+    final home = IsolateNameServer.lookupPortByName(_kPortNameHome);
+    if (home == null) {
+      _away = false;
+    } else {
+      home.send('overlay_ready');
+    }
   }
 
   @override
@@ -61,8 +82,20 @@ class _ActivationOverlayState extends State<ActivationOverlay> {
     super.dispose();
   }
 
+  Future<void> _setAway(bool away) async {
+    // The flag is set even when already away: the window starts touchable.
+    if (!mounted) return;
+    setState(() {
+      _away = away;
+    });
+    // An invisible window would still swallow taps meant for the app.
+    await FlutterOverlayWindow.updateFlag(
+      away ? OverlayFlag.clickThrough : OverlayFlag.defaultFlag,
+    );
+  }
+
   Future<void> _activate() async {
-    if (_hidden) return;
+    if (_hidden || _away) return;
     log('Activate!!');
     setState(() => _hidden = true);
     _showTimer = Timer(_showTimeout, _show);
@@ -87,6 +120,7 @@ class _ActivationOverlayState extends State<ActivationOverlay> {
 
   @override
   Widget build(BuildContext context) {
+    final gone = _hidden || _away;
     return Material(
       color: Colors.transparent,
       elevation: 0.0,
@@ -100,13 +134,11 @@ class _ActivationOverlayState extends State<ActivationOverlay> {
           // Gone at once for the screenshot, then pops back in, which also
           // tells the user the capture happened.
           child: AnimatedOpacity(
-            opacity: _hidden ? 0 : 1,
-            duration: _hidden
-                ? Duration.zero
-                : const Duration(milliseconds: 160),
+            opacity: gone ? 0 : 1,
+            duration: gone ? Duration.zero : const Duration(milliseconds: 160),
             child: AnimatedScale(
-              scale: _hidden ? 0.6 : 1,
-              duration: _hidden
+              scale: gone ? 0.6 : 1,
+              duration: gone
                   ? Duration.zero
                   : const Duration(milliseconds: 320),
               curve: Curves.easeOutBack,
