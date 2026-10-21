@@ -409,39 +409,46 @@ class PageTextFactory {
   static final _kanaOnly = RegExp(r'^[\u3040-\u30FF\s]+$');
 
   /// Is [ruby] a furigana line hugging [base]? Horizontal ruby sits just
-  /// above the base line, vertical ruby just right of the base column.
+  /// above the base line, vertical ruby just right of the base column. Tiny
+  /// text has loose OCR boxes, so the checks are lenient: some overlap along
+  /// the line, and an edge within half a line of the base's edge.
   bool _isRubyOf(Rect ruby, Rect base) {
     final rubyThickness = min(ruby.width, ruby.height);
     final baseThickness = min(base.width, base.height);
-    if (rubyThickness > baseThickness * 0.7) return false;
+    if (rubyThickness > baseThickness * 0.75) return false;
 
+    final slack = baseThickness * 0.5;
     final baseVertical = base.height > base.width;
     if (baseVertical) {
-      final c = ruby.center.dy;
-      return c > base.top &&
-          c < base.bottom &&
-          ruby.left > base.right - baseThickness * 0.3 &&
-          ruby.left < base.right + baseThickness * 0.5;
+      final overlap = min(ruby.bottom, base.bottom) - max(ruby.top, base.top);
+      return overlap > ruby.height * 0.3 &&
+          ruby.center.dx > base.center.dx &&
+          (ruby.left - base.right).abs() < slack;
     }
-    final c = ruby.center.dx;
-    return c > base.left &&
-        c < base.right &&
-        ruby.bottom > base.top - baseThickness * 0.5 &&
-        ruby.bottom < base.top + baseThickness * 0.3;
+    final overlap = min(ruby.right, base.right) - max(ruby.left, base.left);
+    return overlap > ruby.width * 0.3 &&
+        ruby.center.dy < base.center.dy &&
+        (ruby.bottom - base.top).abs() < slack;
   }
 
   /// Furigana lines, which must not be read as part of the text.
   Set<TextLine> _rubyLines(List<TextLine> lines) {
-    return {
-      for (final line in lines)
-        if (_kanaOnly.hasMatch(line.text) &&
-            lines.any(
-              (base) =>
-                  !identical(base, line) &&
-                  _isRubyOf(line.boundingBox, base.boundingBox),
-            ))
-          line,
-    };
+    final ruby = <TextLine>{};
+    for (final line in lines) {
+      if (!_kanaOnly.hasMatch(line.text)) continue;
+      final isRuby = lines.any(
+        (base) =>
+            !identical(base, line) &&
+            _isRubyOf(line.boundingBox, base.boundingBox),
+      );
+      if (isRuby) {
+        ruby.add(line);
+      } else {
+        // TODO: remove once furigana detection is settled
+        debugPrint('kept kana line "${line.text}" ${line.boundingBox}');
+      }
+    }
+    return ruby;
   }
 
   PageText? build(RecognizedText recognizedText, ScriptRules rules) {
