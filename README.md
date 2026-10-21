@@ -1,29 +1,26 @@
-# LinguaScreen App
+<p align="center">
+  <img src="assets/icon.png" alt="LinguaScreen logo" width="128" />
+</p>
+
+<h1 align="center">LinguaScreen App</h1>
 
 App frontend for LinguaScreen built with Flutter.
 
 LinguaScreen is a language learning app which allows you to learn from reading books in languages you want to learn. It provides an overlay which provides translation and AI powered explanation for why a sentence is structured in a way or why a word is used in a context.
 
+## Demo
+
+| Reading with the overlay | Quizzes and flashcards |
+| --- | --- |
+| ![Reading demo](docs/demo/read.gif) | ![Quiz and flashcard demo](docs/demo/quiz_flashcard.gif) |
+
 ## Backend Code
 
-https://github.com/MMADUs/linguascreen-api
+https://github.com/KrisNathan/linguascreen-api-go
 
 ## Supported Platform
 
 Currently we only support Android.
-
-## Getting Started
-
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
 
 ## Development
 
