@@ -69,11 +69,7 @@ class _LoginPageState extends State<LoginPage> {
             children: [
               Row(
                 children: [
-                  Image.asset(
-                    'assets/icon.png',
-                    height: 40,
-                    color: Palette.ink,
-                  ),
+                  Image.asset('assets/logo_mark.png', height: 40),
                   const SizedBox(width: 12),
                   Text(
                     'LinguaScreen',

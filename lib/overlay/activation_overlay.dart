@@ -110,19 +110,16 @@ class _ActivationOverlayState extends State<ActivationOverlay> {
                   ? Duration.zero
                   : const Duration(milliseconds: 320),
               curve: Curves.easeOutBack,
-              child: const Card(
-                color: Palette.highlighter,
+              // The app icon in miniature: paper, ink ring, the marked L.
+              child: Card(
+                color: Palette.paper,
                 elevation: 3.0,
                 shadowColor: Palette.ink,
-                shape: CircleBorder(
+                shape: const CircleBorder(
                   side: BorderSide(color: Palette.ink, width: 2),
                 ),
                 child: Center(
-                  child: ImageIcon(
-                    AssetImage('assets/icon.png'),
-                    size: 30.0,
-                    color: Palette.ink,
-                  ),
+                  child: Image.asset('assets/logo_mark.png', width: 34),
                 ),
               ),
             ),
