@@ -1,15 +1,18 @@
 import 'dart:developer';
 import 'dart:isolate';
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:lingua_screen/pages/dictionary_page.dart';
-import 'package:lingua_screen/pages/quiz_page.dart';
+import 'package:lingua_screen/pages/practice_page.dart';
 import 'package:lingua_screen/pages/home_page.dart';
 import 'package:lingua_screen/pages/ocr_page.dart';
 import 'package:lingua_screen/pages/course_page.dart';
 import 'package:lingua_screen/session.dart';
+import 'package:lingua_screen/api/models.dart';
+import 'package:lingua_screen/widgets/paper_tab_bar.dart';
 
 class DashboardWidget extends StatefulWidget {
   const DashboardWidget({super.key});
@@ -19,7 +22,9 @@ class DashboardWidget extends StatefulWidget {
 }
 
 class _DashboardWidgetState extends State<DashboardWidget> {
-  int _selectedIndex = 1;
+  int _selectedIndex = 0;
+
+  static const _tabs = ['Today', 'Words', 'Practice'];
   bool _isCapturing = false;
 
   Future<dynamic> _handleNativeMethodCall(MethodCall call) async {
@@ -33,6 +38,7 @@ class _DashboardWidgetState extends State<DashboardWidget> {
           }
         });
         log('Screenshot success: $filePath');
+        _showOverlayButton();
 
         log('INVOKING bringAppToForeground');
         try {
@@ -54,10 +60,12 @@ class _DashboardWidgetState extends State<DashboardWidget> {
           _isCapturing = false;
         });
         log('Screenshot error: $code - $message');
+        _showOverlayButton();
 
         // The recording session ended (e.g. stopped from the system UI),
         // so the floating button can no longer capture anything.
-        if (code == 'SESSION_STOPPED' && await FlutterOverlayWindow.isActive()) {
+        if (code == 'SESSION_STOPPED' &&
+            await FlutterOverlayWindow.isActive()) {
           await FlutterOverlayWindow.closeOverlay();
         }
         break;
@@ -88,12 +96,22 @@ class _DashboardWidgetState extends State<DashboardWidget> {
       setState(() {
         _isCapturing = false;
       });
+      _showOverlayButton();
     } catch (e) {
       log('Unexpected Error initiating screenshot: $e');
       setState(() {
         _isCapturing = false;
       });
+      _showOverlayButton();
     }
+  }
+
+  /// The floating button hides itself to stay out of the screenshot; this
+  /// brings it back once the capture is over.
+  void _showOverlayButton() {
+    // Looked up each time: a reopened overlay registers a new port.
+    _sendPort = IsolateNameServer.lookupPortByName(_kPortNameOverlay);
+    _sendPort?.send('overlay_show');
   }
 
   void _showOCRPage(String imagePath) {
@@ -157,10 +175,14 @@ class _DashboardWidgetState extends State<DashboardWidget> {
 
   Widget _page(String? courseId) {
     // Keyed by course, so switching courses reloads the course's data.
+    final key = ValueKey(courseId);
     return switch (_selectedIndex) {
-      0 => DictionaryPage(key: ValueKey(courseId)),
-      2 => QuizPage(key: ValueKey(courseId)),
-      _ => const HomePage(),
+      1 => DictionaryPage(key: key),
+      2 => PracticePage(key: key),
+      _ => HomePage(
+        key: key,
+        onOpenWords: () => setState(() => _selectedIndex = 1),
+      ),
     };
   }
 
@@ -176,18 +198,26 @@ class _DashboardWidgetState extends State<DashboardWidget> {
     final course = Session.instance.course;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('LinguaScreen'),
+        title: Text(_tabs[_selectedIndex]),
         actions: [
           if (course != null)
-            ActionChip(
-              avatar: const Icon(Icons.translate, size: 18),
-              label: Text(course.learningLanguage.toUpperCase()),
-              tooltip: course.label,
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const CoursePage()),
+            TextButton.icon(
+              style: TextButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  side: BorderSide(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                ),
               ),
+              iconAlignment: IconAlignment.end,
+              icon: const Icon(Icons.expand_more, size: 20),
+              label: Text(languageName(course.learningLanguage)),
+              onPressed: () => Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => const CoursePage())),
             ),
           PopupMenuButton<void>(
+            tooltip: 'More',
             itemBuilder: (context) => [
               PopupMenuItem(onTap: _signOut, child: const Text('Sign out')),
             ],
@@ -195,31 +225,10 @@ class _DashboardWidgetState extends State<DashboardWidget> {
         ],
       ),
       body: _page(courseId),
-
-      bottomNavigationBar: NavigationBar(
-        onDestinationSelected: (int index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-        },
+      bottomNavigationBar: PaperTabBar(
+        labels: _tabs,
         selectedIndex: _selectedIndex,
-        destinations: const <Widget>[
-          NavigationDestination(
-            selectedIcon: Icon(Icons.book),
-            icon: Icon(Icons.book_outlined),
-            label: 'Dictionary',
-          ),
-          NavigationDestination(
-            selectedIcon: Icon(Icons.home),
-            icon: Icon(Icons.home_outlined),
-            label: 'Home',
-          ),
-          NavigationDestination(
-            selectedIcon: Icon(Icons.quiz),
-            icon: Icon(Icons.quiz_outlined),
-            label: 'Flashcards',
-          ),
-        ],
+        onSelected: (index) => setState(() => _selectedIndex = index),
       ),
     );
   }

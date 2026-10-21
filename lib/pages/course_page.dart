@@ -42,9 +42,8 @@ class _CoursePageState extends State<CoursePage> {
       await _choose(course);
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.userMessage)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.userMessage)));
     } finally {
       if (mounted) setState(() => _creating = false);
     }
@@ -90,22 +89,39 @@ class _CoursePageState extends State<CoursePage> {
             padding: const EdgeInsets.all(16),
             children: [
               if (courses.isNotEmpty) ...[
-                Text('Your courses', style: theme.textTheme.titleMedium),
+                Text('Your courses', style: theme.textTheme.titleLarge),
                 const SizedBox(height: 8),
-                for (final course in courses)
-                  Card.filled(
-                    child: ListTile(
-                      title: Text(course.label),
-                      trailing: course.id == current?.id
-                          ? const Icon(Icons.check)
-                          : null,
-                      onTap: () => _choose(course),
-                    ),
+                Card(
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    children: [
+                      for (final (i, course) in courses.indexed) ...[
+                        if (i > 0) const Divider(),
+                        ListTile(
+                          title: Text(
+                            languageName(course.learningLanguage),
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: Text(
+                            'from ${languageName(course.baseLanguage)}',
+                          ),
+                          selected: course.id == current?.id,
+                          selectedColor: theme.colorScheme.onSurface,
+                          trailing: course.id == current?.id
+                              ? const Icon(Icons.check)
+                              : null,
+                          onTap: () => _choose(course),
+                        ),
+                      ],
+                    ],
                   ),
-                const SizedBox(height: 24),
+                ),
+                const SizedBox(height: 32),
               ],
-              Text('New course', style: theme.textTheme.titleMedium),
-              const SizedBox(height: 8),
+              Text('New course', style: theme.textTheme.titleLarge),
+              const SizedBox(height: 12),
               _languagePicker(
                 label: 'I want to learn',
                 value: _learning,
@@ -117,7 +133,7 @@ class _CoursePageState extends State<CoursePage> {
                 value: _base,
                 onChanged: (v) => setState(() => _base = v),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               FilledButton(
                 onPressed: _creating || _learning == _base ? null : _create,
                 child: Text(

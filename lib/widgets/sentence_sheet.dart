@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:lingua_screen/api/api_client.dart';
 import 'package:lingua_screen/api/models.dart';
 import 'package:lingua_screen/ocr/sentence_reader.dart';
+import 'package:lingua_screen/theme.dart';
+import 'package:lingua_screen/widgets/marked_text.dart';
 import 'package:lingua_screen/widgets/simple_markdown.dart';
 
 /// The popup for the sentence picked in a [SentenceReader]: its words (as
@@ -44,7 +46,7 @@ class _SentenceSheetState extends State<SentenceSheet> {
     final theme = Theme.of(context);
     return Material(
       color: theme.colorScheme.surface,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
       child: ListenableBuilder(
         listenable: _reader,
         builder: (context, _) {
@@ -78,8 +80,11 @@ class _SentenceSheetState extends State<SentenceSheet> {
     );
   }
 
+  TextStyle get _sentenceStyle =>
+      learned(widget.course.learningLanguage, fontSize: 24, height: 1.6);
+
   List<Widget> _loading(SentenceState sentence, ThemeData theme) => [
-    Text(sentence.text, style: theme.textTheme.titleMedium),
+    Text(sentence.text, style: _sentenceStyle),
     const SizedBox(height: 12),
     const LinearProgressIndicator(),
     const SizedBox(height: 8),
@@ -89,7 +94,7 @@ class _SentenceSheetState extends State<SentenceSheet> {
   List<Widget> _failed(SentenceState sentence, ThemeData theme) {
     final error = sentence.error;
     return [
-      Text(sentence.text, style: theme.textTheme.titleMedium),
+      Text(sentence.text, style: _sentenceStyle),
       const SizedBox(height: 12),
       Text(
         error is ApiException
@@ -126,54 +131,73 @@ class _SentenceSheetState extends State<SentenceSheet> {
         analysis.translation,
         style: theme.textTheme.bodyLarge?.copyWith(
           color: theme.colorScheme.onSurfaceVariant,
+          height: 1.5,
         ),
       ),
-      const Divider(height: 24),
+      const Divider(height: 32),
       if (token != null)
         _word(analysis, token, theme)
       else
-        Text('Tap a word to see what it means.', style: theme.textTheme.bodyMedium),
+        Text(
+          'Tap a word to see what it means.',
+          style: theme.textTheme.bodyMedium,
+        ),
       const SizedBox(height: 8),
       _explanation(analysis, theme),
     ];
   }
 
-  /// The sentence, every saveable token tappable.
+  /// The sentence, every saveable token tappable. The tapped one gets a
+  /// highlighter stroke.
   Widget _tokens(Analysis analysis, ThemeData theme) {
-    final style = theme.textTheme.titleLarge!;
+    final style = _sentenceStyle;
+
+    // Closing punctuation wraps with the word before it, so a line never
+    // starts with 。 or ).
+    final chunks = <List<Widget>>[];
+    for (final (i, t) in analysis.tokens.indexed) {
+      final word = t.saveable
+          ? _wordToken(i, t, style)
+          : Text(t.surface, style: style);
+      if (!t.saveable && chunks.isNotEmpty && _closing.hasMatch(t.surface)) {
+        chunks.last.add(word);
+      } else {
+        chunks.add([word]);
+      }
+    }
+
     return Wrap(
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        for (final (i, t) in analysis.tokens.indexed)
-          if (!t.saveable)
-            Text(t.surface, style: style)
-          else
-            InkWell(
-              borderRadius: BorderRadius.circular(6),
-              onTap: () => setState(() {
-                _token = i;
-                _part = null;
-              }),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                decoration: BoxDecoration(
-                  color: i == _token
-                      ? theme.colorScheme.primaryContainer
-                      : null,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border(
-                    bottom: BorderSide(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.5),
-                      width: 2,
-                    ),
-                  ),
-                ),
-                child: Text(t.surface, style: style),
-              ),
-            ),
+        for (final chunk in chunks)
+          chunk.length == 1
+              ? chunk.single
+              : Row(mainAxisSize: MainAxisSize.min, children: chunk),
       ],
     );
   }
+
+  /// Only closing punctuation, which may not start a line.
+  static final _closing = RegExp(r'^[、。，．,.!?！？:;：；)\]）］」』】〕〉》”’…・]+$');
+
+  /// A tappable word, swept with the highlighter while selected.
+  Widget _wordToken(int i, Token t, TextStyle style) => InkWell(
+    borderRadius: BorderRadius.circular(4),
+    onTap: () => setState(() {
+      _token = i;
+      _part = null;
+    }),
+    child: Sweep(
+      marked: i == _token,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 1),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: Palette.inkFaint, width: 2)),
+        ),
+        child: Text(t.surface, style: style),
+      ),
+    ),
+  );
 
   /// The selected token, or one of its parts.
   Widget _word(Analysis analysis, Token token, ThemeData theme) {
@@ -204,13 +228,30 @@ class _SentenceSheetState extends State<SentenceSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(dictForm, style: theme.textTheme.headlineSmall),
+                  Text(
+                    dictForm,
+                    style: learned(
+                      widget.course.learningLanguage,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   if (reading.isNotEmpty && reading != dictForm)
-                    Text(reading, style: theme.textTheme.titleSmall),
+                    Text(
+                      reading,
+                      style: learned(
+                        widget.course.learningLanguage,
+                        fontSize: 17,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                   if (surface != dictForm)
                     Text(
                       'as “$surface”',
-                      style: theme.textTheme.bodySmall,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 13,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   const SizedBox(height: 4),
                   Text(translation, style: theme.textTheme.bodyLarge),

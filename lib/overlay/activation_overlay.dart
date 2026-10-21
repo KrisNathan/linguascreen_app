@@ -1,8 +1,16 @@
+import 'dart:async';
 import 'dart:developer';
 import 'dart:isolate';
 import 'dart:ui';
-import 'package:flutter/material.dart';
 
+import 'package:flutter/material.dart';
+import 'package:lingua_screen/theme.dart';
+
+/// The floating button shown over other apps. Tapping it asks the app to
+/// capture the screen.
+///
+/// The button hides itself before asking, so it is not in the screenshot,
+/// and comes back when the app sends `overlay_show`.
 class ActivationOverlay extends StatefulWidget {
   const ActivationOverlay({super.key});
 
@@ -14,8 +22,15 @@ class _ActivationOverlayState extends State<ActivationOverlay> {
   static const String _kPortNameOverlay = 'OVERLAY';
   static const String _kPortNameHome = 'UI';
   final _receivePort = ReceivePort();
-  SendPort? _sendPort;
-  String? _messageFromUI;
+
+  /// Time for the screen recording to receive a frame without the button.
+  static const _hideDelay = Duration(milliseconds: 150);
+
+  /// Shows the button again if the app never answers, e.g. it was closed.
+  static const _showTimeout = Duration(seconds: 4);
+
+  bool _hidden = false;
+  Timer? _showTimer;
 
   @override
   void initState() {
@@ -33,18 +48,41 @@ class _ActivationOverlayState extends State<ActivationOverlay> {
 
     _receivePort.listen((message) {
       log("message from UI: $message");
-      setState(() {
-        _messageFromUI = 'message from UI: $message';
-      });
+      if (message == 'overlay_show') _show();
     });
   }
 
   @override
   void dispose() {
+    _showTimer?.cancel();
     _receivePort.close();
     IsolateNameServer.removePortNameMapping(_kPortNameOverlay);
 
     super.dispose();
+  }
+
+  Future<void> _activate() async {
+    if (_hidden) return;
+    log('Activate!!');
+    setState(() => _hidden = true);
+    _showTimer = Timer(_showTimeout, _show);
+
+    // Wait until the hidden frame is drawn, then until the recording has it.
+    await WidgetsBinding.instance.endOfFrame;
+    await Future<void>.delayed(_hideDelay);
+
+    final home = IsolateNameServer.lookupPortByName(_kPortNameHome);
+    if (home == null) {
+      _show();
+      return;
+    }
+    home.send('overlay_activate');
+  }
+
+  void _show() {
+    _showTimer?.cancel();
+    _showTimer = null;
+    if (mounted && _hidden) setState(() => _hidden = false);
   }
 
   @override
@@ -56,25 +94,36 @@ class _ActivationOverlayState extends State<ActivationOverlay> {
       // up of a drag, so the dragged pointer never ends and a tap recognizer
       // ignores every later tap. Only taps deliver a pointer up to Flutter.
       child: Listener(
-        onPointerUp: (_) {
-          log('Activate!!');
-          _sendPort = IsolateNameServer.lookupPortByName(_kPortNameHome);
-          _sendPort?.send('overlay_activate');
-        },
+        onPointerUp: (_) => _activate(),
         child: SizedBox(
           height: MediaQuery.of(context).size.height,
-          child: Card(
-            elevation: 1.0,
-            shape: CircleBorder(),
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [const ImageIcon(
-                  AssetImage('assets/icon.png'),
-                  size: 32.0,
-                  color: Colors.blue,
-                ),],
+          // Gone at once for the screenshot, then pops back in, which also
+          // tells the user the capture happened.
+          child: AnimatedOpacity(
+            opacity: _hidden ? 0 : 1,
+            duration: _hidden
+                ? Duration.zero
+                : const Duration(milliseconds: 160),
+            child: AnimatedScale(
+              scale: _hidden ? 0.6 : 1,
+              duration: _hidden
+                  ? Duration.zero
+                  : const Duration(milliseconds: 320),
+              curve: Curves.easeOutBack,
+              child: const Card(
+                color: Palette.highlighter,
+                elevation: 3.0,
+                shadowColor: Palette.ink,
+                shape: CircleBorder(
+                  side: BorderSide(color: Palette.ink, width: 2),
+                ),
+                child: Center(
+                  child: ImageIcon(
+                    AssetImage('assets/icon.png'),
+                    size: 30.0,
+                    color: Palette.ink,
+                  ),
+                ),
               ),
             ),
           ),

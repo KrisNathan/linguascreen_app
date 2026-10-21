@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:lingua_screen/ocr/page_text.dart';
+import 'package:lingua_screen/theme.dart';
 
 import 'image_transform.dart';
 
-const _accent = Color(0xFF4285F4);
+/// A darker amber than the highlighter, so outlines show on light and
+/// dark screenshots alike.
+const _edge = Color(0xFFA8820F);
 
 /// Draws everything on top of the image, back to front:
 /// sentence outlines, then the selected sentence.
@@ -51,11 +54,12 @@ class OcrPainter extends CustomPainter {
     final progress = Curves.easeOut.transform(intro.value);
     if (progress <= 0) return;
 
-    final fill = Paint()..color = _accent.withValues(alpha: 0.10 * progress);
+    final fill = Paint()
+      ..color = Palette.highlighter.withValues(alpha: 0.12 * progress);
     final edge = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2
-      ..color = _accent.withValues(alpha: 0.55 * progress);
+      ..strokeWidth = 1.5
+      ..color = _edge.withValues(alpha: 0.85 * progress);
 
     for (final rect in sentenceRects) {
       final rounded = _rounded(transform, rect, inflate: 3, radius: 6);
@@ -76,7 +80,8 @@ class OcrPainter extends CustomPainter {
   }
 
   void _paintSelection(Canvas canvas, ImageTransform t, int start, int end) {
-    final paint = Paint()..color = _accent.withValues(alpha: 0.4);
+    // The picked sentence is marked like a saved word.
+    final paint = Paint()..color = Palette.highlighter.withValues(alpha: 0.5);
 
     for (final rect in page.rectsFor(start, end)) {
       canvas.drawRRect(_rounded(t, rect, inflate: 2, radius: 8), paint);

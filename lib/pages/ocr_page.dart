@@ -25,8 +25,7 @@ class _OCRPageState extends State<OCRPage> {
   final _ocr = OcrController();
   late final _reader = SentenceReader(
     ocr: _ocr,
-    analyze: (sentence) =>
-        ApiClient.instance.analyze(_course!.id, sentence),
+    analyze: (sentence) => ApiClient.instance.analyze(_course!.id, sentence),
   );
 
   bool _loadFailed = false;
@@ -78,7 +77,10 @@ class _OCRPageState extends State<OCRPage> {
     if (loaded == null) {
       return _loadFailed
           ? const _Message('Could not read text from this screenshot.')
-          : const Center(child: CircularProgressIndicator());
+          : const Center(
+              // The theme's ink would vanish on this black page.
+              child: CircularProgressIndicator(color: Colors.white),
+            );
     }
 
     return OCRCanvas(

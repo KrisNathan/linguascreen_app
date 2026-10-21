@@ -303,3 +303,150 @@ class VocabDetail {
     ],
   );
 }
+
+class QuizScore {
+  final int correct;
+  final int answered;
+  final int total;
+
+  const QuizScore({
+    required this.correct,
+    required this.answered,
+    required this.total,
+  });
+
+  factory QuizScore.fromJson(Map<String, dynamic> json) => QuizScore(
+    correct: (json['correct'] as num?)?.toInt() ?? 0,
+    answered: (json['answered'] as num?)?.toInt() ?? 0,
+    total: (json['total'] as num?)?.toInt() ?? 0,
+  );
+}
+
+/// `fill_blank`, `translation` or `reading`. Only the fields its type shows
+/// are set. The correct option is never sent.
+class QuizQuestion {
+  final String id;
+  final String type;
+
+  /// `fill_blank`: the sentence, with the vocab at [span].
+  final String sentence;
+  final Span? span;
+
+  /// `translation` and `reading`.
+  final String dictForm;
+
+  /// `translation` only.
+  final String reading;
+  final List<String> options;
+
+  const QuizQuestion({
+    required this.id,
+    required this.type,
+    this.sentence = '',
+    this.span,
+    this.dictForm = '',
+    this.reading = '',
+    required this.options,
+  });
+
+  factory QuizQuestion.fromJson(Map<String, dynamic> json) => QuizQuestion(
+    id: json['id'] as String,
+    type: json['type'] as String,
+    sentence: json['sentence'] as String? ?? '',
+    span: json['span'] == null ? null : _span(json['span']),
+    dictForm: json['dict_form'] as String? ?? '',
+    reading: json['reading'] as String? ?? '',
+    options: [
+      for (final o in json['options'] as List? ?? const []) o as String,
+    ],
+  );
+}
+
+/// Result of `POST /quiz/start`.
+class QuizSession {
+  /// Null when there is nothing to practice.
+  final String? sessionId;
+  final QuizScore score;
+
+  /// The unanswered questions, in order. A resumed session only has the
+  /// ones left.
+  final List<QuizQuestion> questions;
+
+  const QuizSession({
+    this.sessionId,
+    required this.score,
+    required this.questions,
+  });
+
+  factory QuizSession.fromJson(Map<String, dynamic> json) => QuizSession(
+    sessionId: json['session_id'] as String?,
+    score: QuizScore.fromJson(
+      json['score'] as Map<String, dynamic>? ?? const {},
+    ),
+    questions: [
+      for (final q in json['questions'] as List? ?? const [])
+        QuizQuestion.fromJson(q as Map<String, dynamic>),
+    ],
+  );
+}
+
+/// Result of `POST /quiz/submit`.
+class QuizAnswer {
+  final bool correct;
+  final int correctIndex;
+  final String dictForm;
+  final String reading;
+  final String translation;
+
+  /// `fill_blank` only.
+  final String? sentenceTranslation;
+  final QuizScore score;
+  final bool sessionCompleted;
+
+  const QuizAnswer({
+    required this.correct,
+    required this.correctIndex,
+    required this.dictForm,
+    required this.reading,
+    required this.translation,
+    this.sentenceTranslation,
+    required this.score,
+    required this.sessionCompleted,
+  });
+
+  factory QuizAnswer.fromJson(Map<String, dynamic> json) {
+    final vocab = json['vocab'] as Map<String, dynamic>? ?? const {};
+    return QuizAnswer(
+      correct: json['correct'] as bool,
+      correctIndex: (json['correct_index'] as num).toInt(),
+      dictForm: vocab['dict_form'] as String? ?? '',
+      reading: vocab['reading'] as String? ?? '',
+      translation: vocab['translation'] as String? ?? '',
+      sentenceTranslation: json['sentence_translation'] as String?,
+      score: QuizScore.fromJson(json['score'] as Map<String, dynamic>),
+      sessionCompleted: json['session_completed'] as bool? ?? false,
+    );
+  }
+}
+
+/// One card of `POST /flash-card/start`. The back is included.
+class FlashCard {
+  final String vocabId;
+  final String dictForm;
+  final String reading;
+  final String translation;
+
+  const FlashCard({
+    required this.vocabId,
+    required this.dictForm,
+    required this.reading,
+    required this.translation,
+  });
+
+  factory FlashCard.fromJson(Map<String, dynamic> json) => FlashCard(
+    vocabId: json['vocab_id'] as String,
+    dictForm: json['dict_form'] as String,
+    reading: json['reading'] as String? ?? '',
+    translation: json['translation'] as String? ?? '',
+  );
+}

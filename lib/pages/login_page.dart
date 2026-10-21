@@ -5,6 +5,8 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:lingua_screen/api/api_client.dart';
 import 'package:lingua_screen/pages/splash_screen.dart';
+import 'package:lingua_screen/theme.dart';
+import 'package:lingua_screen/widgets/marked_text.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -51,43 +53,56 @@ class _LoginPageState extends State<LoginPage> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error)));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
+          padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Spacer(),
-              Image.asset('assets/icon.png', height: 96),
-              const SizedBox(height: 24),
-              Text(
-                'LinguaScreen',
-                style: theme.textTheme.headlineMedium,
-                textAlign: TextAlign.center,
+              Row(
+                children: [
+                  Image.asset(
+                    'assets/icon.png',
+                    height: 40,
+                    color: Palette.ink,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'LinguaScreen',
+                    style: serif(fontSize: 28, fontWeight: FontWeight.w600),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
+              const Spacer(),
               Text(
                 'Learn languages from what you read.',
-                style: theme.textTheme.bodyLarge,
-                textAlign: TextAlign.center,
+                style: serif(fontSize: 34, height: 1.2),
+              ),
+              const SizedBox(height: 32),
+              const _Sample(
+                language: 'ja',
+                sentence: '本を読んで、新しい言葉を覚える。',
+                word: '言葉',
+                note: 'kotoba · words',
+              ),
+              const SizedBox(height: 16),
+              const _Sample(
+                language: 'zh',
+                sentence: '我在书里学到了新的词语。',
+                word: '词语',
+                note: 'cíyǔ · words',
               ),
               const Spacer(),
               FilledButton.icon(
                 onPressed: _busy ? null : _signIn,
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
                 icon: _busy
                     ? const SizedBox.square(
                         dimension: 18,
@@ -100,6 +115,52 @@ class _LoginPageState extends State<LoginPage> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A sentence with one word marked and a margin note, as the app shows
+/// the user's own reading.
+class _Sample extends StatelessWidget {
+  const _Sample({
+    required this.language,
+    required this.sentence,
+    required this.word,
+    required this.note,
+  });
+
+  final String language;
+  final String sentence;
+  final String word;
+  final String note;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final runes = sentence.runes.toList();
+    final length = word.runes.length;
+    var start = -1;
+    for (var i = 0; i + length <= runes.length; i++) {
+      if (String.fromCharCodes(runes.sublist(i, i + length)) == word) {
+        start = i;
+        break;
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text.rich(
+          markedSentence(sentence, [if (start >= 0) (start, start + length)]),
+          style: learned(language, fontSize: 22, height: 1.6),
+        ),
+        Text(
+          note,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
     );
   }
 }

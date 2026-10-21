@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:lingua_screen/api/api_client.dart';
 import 'package:lingua_screen/api/models.dart';
+import 'package:lingua_screen/dates.dart';
 import 'package:lingua_screen/session.dart';
+import 'package:lingua_screen/theme.dart';
+import 'package:lingua_screen/widgets/marked_text.dart';
 
-/// The saved vocabs of the current course, last saved first.
+/// The saved vocabs of the current course, last saved first and grouped by
+/// the day they were saved.
 class DictionaryPage extends StatefulWidget {
   const DictionaryPage({super.key});
 
@@ -104,7 +108,9 @@ class _DictionaryPageState extends State<DictionaryPage> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
             child: const Text('Delete'),
           ),
         ],
@@ -126,31 +132,10 @@ class _DictionaryPageState extends State<DictionaryPage> {
   }
 
   Future<void> _editTranslation(VocabItem vocab) async {
-    final controller = TextEditingController(text: vocab.translation);
     final translation = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(vocab.dictForm),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 200,
-          decoration: const InputDecoration(labelText: 'Translation'),
-          onSubmitted: (v) => Navigator.pop(context, v),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+      builder: (context) => _MeaningDialog(vocab: vocab),
     );
-    controller.dispose();
     if (translation == null ||
         translation.trim().isEmpty ||
         translation == vocab.translation) {
@@ -180,131 +165,128 @@ class _DictionaryPageState extends State<DictionaryPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final items = _filtered;
+    final language = Session.instance.course?.learningLanguage;
+    final count = '${_items.length}${_hasMore ? '+' : ''}';
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Dictionary'),
-        backgroundColor: theme.colorScheme.surface,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _refresh,
-            tooltip: 'Refresh',
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              onChanged: (value) => setState(() => _query = value),
-              decoration: InputDecoration(
-                hintText: 'Search words or translations...',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                filled: true,
-                fillColor: theme.colorScheme.primaryContainer.withValues(
-                  alpha: 0.3,
-                ),
-              ),
+    // Day headers between entries saved on different days.
+    final rows = <Object>[];
+    String? day;
+    for (final v in items) {
+      final d = savedOn(v.lastSavedAt);
+      if (d != day) rows.add(day = d);
+      rows.add(v);
+    }
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: TextField(
+            onChanged: (value) => setState(() => _query = value),
+            decoration: InputDecoration(
+              hintText: _items.isEmpty ? 'Search words' : 'Search $count words',
+              prefixIcon: const Icon(Icons.search),
+              contentPadding: const EdgeInsets.symmetric(vertical: 14),
             ),
           ),
-          if (_error != null)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              color: theme.colorScheme.errorContainer,
-              child: Row(
-                children: [
-                  Expanded(child: Text(_error!)),
-                  TextButton(onPressed: _loadMore, child: const Text('Retry')),
-                ],
-              ),
+        ),
+        if (_error != null)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+            color: theme.colorScheme.errorContainer,
+            child: Row(
+              children: [
+                Expanded(child: Text(_error!)),
+                TextButton(onPressed: _loadMore, child: const Text('Retry')),
+              ],
             ),
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: _refresh,
-              child: items.isEmpty && !_loading
-                  ? ListView(
-                      children: [
-                        const SizedBox(height: 80),
-                        Icon(
-                          Icons.search_off,
-                          size: 64,
-                          color: theme.colorScheme.onSurface.withValues(
-                            alpha: 0.5,
-                          ),
+          ),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _refresh,
+            child: items.isEmpty && !_loading
+                ? ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 48, 16, 16),
+                    children: [
+                      Text(
+                        _items.isEmpty ? 'No saved words yet' : 'No matches',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _items.isEmpty
+                            ? 'Tap a word in a captured screen to save it.'
+                            : 'Search covers the words loaded so far.',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
-                        const SizedBox(height: 16),
-                        Text(
-                          _items.isEmpty
-                              ? 'No saved words yet.\nTap a word in a screenshot to save it.'
-                              : 'No words found',
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.titleMedium,
-                        ),
-                      ],
-                    )
-                  : ListView.builder(
-                      controller: _scroll,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: items.length + (_loading ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (index == items.length) {
-                          return const Padding(
-                            padding: EdgeInsets.all(16),
-                            child: Center(child: CircularProgressIndicator()),
-                          );
-                        }
-                        return _VocabCard(
-                          key: ValueKey(items[index].id),
-                          vocab: items[index],
-                          detail: _details[items[index].id],
-                          onExpand: (vocab) => setState(() {
-                            _details[vocab.id] ??= _api.getVocab(vocab.id);
-                          }),
-                          onEdit: _editTranslation,
-                          onDelete: _delete,
+                      ),
+                    ],
+                  )
+                : ListView.builder(
+                    controller: _scroll,
+                    padding: const EdgeInsets.only(bottom: 24),
+                    itemCount: rows.length + (_loading ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      if (index == rows.length) {
+                        return const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Center(child: CircularProgressIndicator()),
                         );
-                      },
-                    ),
-            ),
+                      }
+                      final row = rows[index];
+                      if (row is String) return _DayHeader(row);
+                      final vocab = row as VocabItem;
+                      return _VocabEntry(
+                        key: ValueKey(vocab.id),
+                        vocab: vocab,
+                        language: language,
+                        detail: _details[vocab.id],
+                        onExpand: (vocab) => setState(() {
+                          _details[vocab.id] ??= _api.getVocab(vocab.id);
+                        }),
+                        onEdit: _editTranslation,
+                        onDelete: _delete,
+                      );
+                    },
+                  ),
           ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Card.filled(
-              color: theme.colorScheme.primaryContainer,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.book, color: theme.colorScheme.primary),
-                    const SizedBox(width: 8),
-                    Text(
-                      '${_items.length}${_hasMore ? '+' : ''} words saved',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
+        ),
+      ],
+    );
+  }
+}
+
+class _DayHeader extends StatelessWidget {
+  const _DayHeader(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+      child: Text(
+        label,
+        style: theme.textTheme.labelLarge?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
       ),
     );
   }
 }
 
-class _VocabCard extends StatefulWidget {
-  const _VocabCard({
+/// One dictionary entry: the word, its reading and meaning, and how well
+/// it is known. Tapping it opens the sentences it was saved from.
+class _VocabEntry extends StatefulWidget {
+  const _VocabEntry({
     super.key,
     required this.vocab,
+    required this.language,
     required this.detail,
     required this.onExpand,
     required this.onEdit,
@@ -312,196 +294,294 @@ class _VocabCard extends StatefulWidget {
   });
 
   final VocabItem vocab;
+  final String? language;
   final Future<VocabDetail>? detail;
   final ValueChanged<VocabItem> onExpand;
   final ValueChanged<VocabItem> onEdit;
   final ValueChanged<VocabItem> onDelete;
 
   @override
-  State<_VocabCard> createState() => _VocabCardState();
+  State<_VocabEntry> createState() => _VocabEntryState();
 }
 
-class _VocabCardState extends State<_VocabCard> {
+class _VocabEntryState extends State<_VocabEntry> {
   bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final soft = theme.colorScheme.onSurfaceVariant;
     final vocab = widget.vocab;
+    final language = widget.language;
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Card.filled(
-        color: theme.colorScheme.primaryContainer,
-        child: Column(
-          children: [
-            InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () {
-                setState(() => _expanded = !_expanded);
-                if (_expanded) widget.onExpand(vocab);
-              },
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text.rich(
-                            TextSpan(
-                              children: [
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: Palette.rule)),
+      ),
+      child: Column(
+        children: [
+          InkWell(
+            onTap: () {
+              setState(() => _expanded = !_expanded);
+              if (_expanded) widget.onExpand(vocab);
+            },
+            child: Padding(
+              padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 4, 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text.rich(
+                          TextSpan(
+                            children: [
+                              TextSpan(
+                                text: vocab.dictForm,
+                                style: learned(
+                                  language,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              if (vocab.reading.isNotEmpty &&
+                                  vocab.reading != vocab.dictForm)
                                 TextSpan(
-                                  text: vocab.dictForm,
-                                  style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
+                                  text: '  ${vocab.reading}',
+                                  style: learned(
+                                    language,
+                                    fontSize: 15,
+                                    color: soft,
                                   ),
                                 ),
-                                if (vocab.reading.isNotEmpty &&
-                                    vocab.reading != vocab.dictForm)
-                                  TextSpan(
-                                    text: '  ${vocab.reading}',
-                                    style: theme.textTheme.bodyMedium,
-                                  ),
-                              ],
-                            ),
+                            ],
                           ),
-                          Text(vocab.translation),
-                          const SizedBox(height: 4),
-                          Text(
-                            _progressLabel(vocab),
-                            style: theme.textTheme.labelSmall,
-                          ),
-                        ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          vocab.translation,
+                          style: theme.textTheme.bodyLarge,
+                        ),
+                        const SizedBox(height: 6),
+                        _StateMark(vocab),
+                      ],
+                    ),
+                  ),
+                  PopupMenuButton<void>(
+                    tooltip: 'Word options',
+                    itemBuilder: (context) => [
+                      PopupMenuItem(
+                        onTap: () => widget.onEdit(vocab),
+                        child: const Text('Edit meaning'),
                       ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.edit_outlined),
-                      onPressed: () => widget.onEdit(vocab),
-                      tooltip: 'Edit translation',
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () => widget.onDelete(vocab),
-                      tooltip: 'Delete word',
-                    ),
-                    Icon(
-                      _expanded
-                          ? Icons.keyboard_arrow_up
-                          : Icons.keyboard_arrow_down,
-                    ),
-                  ],
-                ),
+                      PopupMenuItem(
+                        onTap: () => widget.onDelete(vocab),
+                        child: Text(
+                          'Delete',
+                          style: TextStyle(color: theme.colorScheme.error),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-            if (_expanded) ...[
-              const Divider(height: 1),
-              FutureBuilder(
-                future: widget.detail,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState != ConnectionState.done) {
-                    return const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Center(child: CircularProgressIndicator()),
-                    );
-                  }
-                  if (snapshot.hasError) {
-                    final error = snapshot.error;
-                    return Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(
-                        error is ApiException
-                            ? error.userMessage
-                            : 'Could not load the examples.',
-                      ),
-                    );
-                  }
-                  return Column(
-                    children: [
-                      for (final o in snapshot.data!.occurrences)
-                        _OccurrenceTile(occurrence: o),
-                    ],
-                  );
-                },
-              ),
-            ],
-          ],
-        ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 240),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: _expanded
+                ? _examples(theme)
+                : const SizedBox(width: double.infinity),
+          ),
+        ],
       ),
     );
   }
 
-  static String _progressLabel(VocabItem vocab) {
-    final examples =
-        '${vocab.occurrenceCount} example${vocab.occurrenceCount == 1 ? '' : 's'}';
-    return switch (vocab.progress.state) {
-      'known' => 'Known · $examples',
-      'learning' => 'Learning, streak ${vocab.progress.streak} · $examples',
-      _ => 'New · $examples',
-    };
+  Widget _examples(ThemeData theme) {
+    return FutureBuilder(
+      future: widget.detail,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snapshot.hasError) {
+          final error = snapshot.error;
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Text(
+              error is ApiException
+                  ? error.userMessage
+                  : 'Could not load the examples.',
+            ),
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Column(
+            children: [
+              for (final o in snapshot.data!.occurrences)
+                _OccurrenceTile(occurrence: o, language: widget.language),
+            ],
+          ),
+        );
+      },
+    );
   }
 }
 
-class _OccurrenceTile extends StatelessWidget {
-  const _OccurrenceTile({required this.occurrence});
+/// How well the vocab is known, and how many sentences it was saved from.
+class _StateMark extends StatelessWidget {
+  const _StateMark(this.vocab);
 
-  final Occurrence occurrence;
+  final VocabItem vocab;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final n = vocab.occurrenceCount;
+    final examples = '$n sentence${n == 1 ? '' : 's'}';
+    final (String label, Color dot) = switch (vocab.progress.state) {
+      'known' => ('Known', Palette.leaf),
+      'learning' => (
+        vocab.progress.streak > 0
+            ? 'Learning, ${vocab.progress.streak} in a row'
+            : 'Learning',
+        Palette.inkSoft,
+      ),
+      _ => ('New', Palette.outline),
+    };
+    return Row(
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            '$label · $examples',
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontSize: 13,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _OccurrenceTile extends StatelessWidget {
+  const _OccurrenceTile({required this.occurrence, required this.language});
+
+  final Occurrence occurrence;
+  final String? language;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final soft = theme.colorScheme.onSurfaceVariant;
     final o = occurrence;
-    final runes = o.sentence.runes.toList();
-    String slice(int a, int b) => String.fromCharCodes(runes.sublist(a, b));
-    final validSpan =
-        0 <= o.span.$1 && o.span.$1 < o.span.$2 && o.span.$2 <= runes.length;
 
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
+        color: theme.colorScheme.surfaceContainer,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // The saved word highlighted inside its sentence.
+          // The saved word marked inside its sentence.
           Text.rich(
-            TextSpan(
-              style: const TextStyle(fontSize: 16),
-              children: validSpan
-                  ? [
-                      TextSpan(text: slice(0, o.span.$1)),
-                      TextSpan(
-                        text: slice(o.span.$1, o.span.$2),
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          backgroundColor: theme.colorScheme.primaryContainer,
-                        ),
-                      ),
-                      TextSpan(text: slice(o.span.$2, runes.length)),
-                    ]
-                  : [TextSpan(text: o.sentence)],
-            ),
+            markedSentence(o.sentence, [o.span]),
+            style: learned(language, fontSize: 17, height: 1.6),
           ),
           if (o.sentenceTranslation.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(
               o.sentenceTranslation,
-              style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+              style: theme.textTheme.bodyMedium?.copyWith(color: soft),
             ),
           ],
-          const SizedBox(height: 4),
-          Text(
-            '${o.surface} · ${o.translation}',
-            style: theme.textTheme.labelMedium,
-          ),
+          if (o.translation.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Here: ${o.translation}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontSize: 13,
+                color: soft,
+              ),
+            ),
+          ],
         ],
       ),
+    );
+  }
+}
+
+/// Edits a vocab's meaning. Pops the new text, or null when cancelled.
+///
+/// Owns its controller, so the controller lives until the dialog's exit
+/// animation is done.
+class _MeaningDialog extends StatefulWidget {
+  const _MeaningDialog({required this.vocab});
+
+  final VocabItem vocab;
+
+  @override
+  State<_MeaningDialog> createState() => _MeaningDialogState();
+}
+
+class _MeaningDialogState extends State<_MeaningDialog> {
+  late final _controller = TextEditingController(
+    text: widget.vocab.translation,
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(
+        widget.vocab.dictForm,
+        style: learned(
+          Session.instance.course?.learningLanguage,
+          fontSize: 26,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        maxLength: 200,
+        decoration: const InputDecoration(labelText: 'Meaning'),
+        onSubmitted: (v) => Navigator.pop(context, v),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, _controller.text),
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }

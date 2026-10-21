@@ -22,7 +22,7 @@ class OcrHint extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xCC303134),
+                color: const Color(0xE61E1B18),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(

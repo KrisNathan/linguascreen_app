@@ -1,66 +1,15 @@
 import 'package:flutter/material.dart';
-import 'dart:math';
+import 'package:flutter/services.dart';
 import 'package:lingua_screen/api/api_client.dart';
+import 'package:lingua_screen/api/models.dart';
 import 'package:lingua_screen/session.dart';
+import 'package:lingua_screen/theme.dart';
+import 'package:lingua_screen/widgets/message_view.dart';
+import 'package:lingua_screen/widgets/progress_bar.dart';
+import 'package:lingua_screen/widgets/score_view.dart';
 
-// Model classes for quiz data
-class QuizItem {
-  final String word;
-  final String sentence;
-  final String correctAnswer;
-  final List<String> options;
-
-  QuizItem({
-    required this.word,
-    required this.sentence,
-    required this.correctAnswer,
-    required this.options,
-  });
-
-  factory QuizItem.fromWordEntry(Map<String, dynamic> wordEntry) {
-    final word = wordEntry['word'] ?? '';
-    final sentences = wordEntry['sentences'] as List<dynamic>? ?? [];
-    
-    if (sentences.isEmpty) {
-      return QuizItem(
-        word: word,
-        sentence: 'No sentence available',
-        correctAnswer: 'No meaning available',
-        options: ['No meaning available'],
-      );
-    }
-    
-    final firstSentence = sentences[0];
-    final sentence = firstSentence['sentence'] ?? 'No sentence available';
-    final correctAnswer = firstSentence['word_meaning'] ?? 'No meaning available';
-    
-    return QuizItem(
-      word: word,
-      sentence: sentence,
-      correctAnswer: correctAnswer,
-      options: [correctAnswer], // Will be populated with distractors later
-    );
-  }
-
-  factory QuizItem.fromJson(Map<String, dynamic> json) {
-    return QuizItem(
-      word: json['word'] ?? '',
-      sentence: json['sentence'] ?? '',
-      correctAnswer: json['correct_answer'] ?? '',
-      options: List<String>.from(json['options'] ?? []),
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'word': word,
-      'sentence': sentence,
-      'correct_answer': correctAnswer,
-      'options': options,
-    };
-  }
-}
-
+/// Multiple choice questions about the saved vocabs. The server keeps the
+/// session and grades every answer, so leaving and coming back resumes it.
 class QuizPage extends StatefulWidget {
   const QuizPage({super.key});
 
@@ -69,731 +18,533 @@ class QuizPage extends StatefulWidget {
 }
 
 class _QuizPageState extends State<QuizPage> {
-  List<QuizItem> quizData = [];
-  List<String> allMeanings = []; // For generating distractors
-  
-  int currentQuestionIndex = 0;
-  int? selectedOptionIndex;
-  bool hasAnswered = false;
-  int correctAnswers = 0;
-  int totalQuestions = 0;
-  bool quizCompleted = false;
-  bool isLoading = true;
-  String errorMessage = '';
+  final _api = ApiClient.instance;
 
-  // Default fallback quiz data
-  final List<QuizItem> fallbackQuizData = [
-    QuizItem(
-      word: '猫',
-      sentence: '黒天を見上げて猫はマオマオは溜息をついた。',
-      correctAnswer: 'Cat - a small domesticated carnivorous mammal',
-      options: [
-        'Cat - a small domesticated carnivorous mammal',
-        'Dog - a loyal companion animal',
-        'Bird - a flying creature with wings',
-        'Fish - an aquatic animal with gills'
-      ],
-    ),
-    QuizItem(
-      word: 'Flutter',
-      sentence: 'Flutter makes it easy to build beautiful apps.',
-      correctAnswer: 'UI toolkit for building applications',
-      options: [
-        'UI toolkit for building applications',
-        'A type of butterfly movement',
-        'A programming language',
-        'A database management system'
-      ],
-    ),
-    QuizItem(
-      word: '学習',
-      sentence: '毎日日本語を学習している。',
-      correctAnswer: 'Learning/Study - acquiring knowledge',
-      options: [
-        'Learning/Study - acquiring knowledge',
-        'Teaching - sharing knowledge',
-        'Playing - recreational activity',
-        'Working - professional activity'
-      ],
-    ),
-  ];
+  bool _loading = true;
+  String? _error;
+
+  List<QuizQuestion> _questions = [];
+  QuizScore _score = const QuizScore(correct: 0, answered: 0, total: 0);
+  int _index = 0;
+  int? _selected;
+  bool _submitting = false;
+
+  /// The graded answer to the current question, null until submitted.
+  QuizAnswer? _answer;
+
+  bool get _completed => _questions.isNotEmpty && _index >= _questions.length;
 
   @override
   void initState() {
     super.initState();
-    _initializeQuiz();
+    _start();
   }
 
-  Future<void> _initializeQuiz() async {
-    await _fetchQuizData();
-    if (mounted && quizData.isNotEmpty) {
-      _generateDistractors();
-      _shuffleOptions();
-      setState(() {
-        totalQuestions = quizData.length;
-        isLoading = false;
-      });
-    } else if (mounted) {
-      _useFallbackData();
-    }
-  }
-
-  // Fetch quiz data from API
-  Future<void> _fetchQuizData() async {
-    if (!mounted) return;
-    
-    if (mounted) {
+  Future<void> _start() async {
+    final courseId = Session.instance.course?.id;
     setState(() {
-      isLoading = true;
-      errorMessage = '';
+      _loading = true;
+      _error = null;
     });
-    }
-
     try {
-      final courseId = Session.instance.course?.id;
-      if (courseId == null) throw Exception('No course selected');
-
-      // TODO: switch to POST /quiz/start and /quiz/submit once the API has them.
-      final page = await ApiClient.instance.listVocabs(courseId, limit: 100);
-      if (!mounted) return; // Check mounted after async operation
-
-      final fetchedQuizData = [
-        for (final vocab in page.items)
-          if (vocab.translation.isNotEmpty)
-            QuizItem(
-              word: vocab.dictForm,
-              sentence: vocab.reading == vocab.dictForm ? '' : vocab.reading,
-              correctAnswer: vocab.translation,
-              options: [vocab.translation],
-            ),
-      ];
-      if (fetchedQuizData.isEmpty) {
-        throw Exception('No saved words to practice yet');
-      }
-
-      // Shuffle and limit to reasonable number for quiz
-      fetchedQuizData.shuffle();
+      if (courseId == null) throw const ApiException(0, 'no course selected');
+      final session = await _api.startQuiz(courseId);
+      if (!mounted) return;
       setState(() {
-        quizData = fetchedQuizData.take(10).toList(); // Limit to 10 questions
-        allMeanings = {for (final q in fetchedQuizData) q.correctAnswer}.toList();
-        isLoading = false;
+        _questions = session.questions;
+        _score = session.score;
+        _index = 0;
+        _selected = null;
+        _answer = null;
       });
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          errorMessage = 'Error loading quiz: $e';
-          isLoading = false;
-        });
-        _useFallbackData();
-      }
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.userMessage);
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  void _useFallbackData() {
-    if (!mounted) return;
-    
-    if (mounted) {
-    setState(() {
-      quizData = List.from(fallbackQuizData);
-      totalQuestions = quizData.length;
-      isLoading = false;
-      if (errorMessage.isEmpty) {
-        errorMessage = 'Using offline quiz data';
-      }
-    });
-    }
-    _shuffleOptions();
-  }
-
-  void _generateDistractors() {
-    final random = Random();
-    
-    for (int i = 0; i < quizData.length; i++) {
-      final currentItem = quizData[i];
-      final correctAnswer = currentItem.correctAnswer;
-      
-      // Get other meanings as distractors
-      List<String> distractors = allMeanings
-          .where((meaning) => meaning != correctAnswer)
-          .toList();
-      
-      // Shuffle and take up to 3 distractors
-      distractors.shuffle(random);
-      distractors = distractors.take(3).toList();
-      
-      // If we don't have enough distractors, add some generic ones
-      if (distractors.length < 3) {
-        final genericDistractors = [
-          'A type of food or cuisine',
-          'A place or location',
-          'An action or activity',
-          'A feeling or emotion',
-          'A tool or instrument',
-          'A time or period',
-          'A natural phenomenon',
-          'A social concept',
-        ];
-        
-        for (String generic in genericDistractors) {
-          if (distractors.length >= 3) break;
-          if (generic != correctAnswer && !distractors.contains(generic)) {
-            distractors.add(generic);
-          }
-        }
-      }
-      
-      // Create options list with correct answer and distractors
-      List<String> options = [correctAnswer, ...distractors.take(3)];
-      options.shuffle(random);
-      
-      // Update the quiz item with new options
-      quizData[i] = QuizItem(
-        word: currentItem.word,
-        sentence: currentItem.sentence,
-        correctAnswer: correctAnswer,
-        options: options,
-      );
-    }
-  }
-
-  void _shuffleOptions() {
-    final random = Random();
-    for (var question in quizData) {
-      question.options.shuffle(random);
-    }
-  }
-
-  void _selectOption(int index) {
-    if (hasAnswered || !mounted) return;
-    
-    if (mounted) {
-    setState(() {
-      selectedOptionIndex = index;
-    });
-    }
-  }
-
-  void _submitAnswer() {
-    if (selectedOptionIndex == null || !mounted) return;
-
-    if (mounted) {
-    setState(() {
-      hasAnswered = true;
-      
-      final currentQuestion = quizData[currentQuestionIndex];
-      final selectedAnswer = currentQuestion.options[selectedOptionIndex!];
-      
-      if (selectedAnswer == currentQuestion.correctAnswer) {
-        correctAnswers++;
-      }
-    });
-    }
-  }
-
-  void _nextQuestion() {
-    if (!mounted) return;
-    
-    if (currentQuestionIndex < quizData.length - 1) {
-      if (mounted) {
+  Future<void> _submit() async {
+    final selected = _selected;
+    if (selected == null || _submitting) return;
+    setState(() => _submitting = true);
+    try {
+      final answer = await _api.submitQuiz(_questions[_index].id, selected);
+      if (!mounted) return;
+      answer.correct
+          ? HapticFeedback.lightImpact()
+          : HapticFeedback.mediumImpact();
       setState(() {
-        currentQuestionIndex++;
-        selectedOptionIndex = null;
-        hasAnswered = false;
+        _answer = answer;
+        _score = answer.score;
       });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      // 409: the session expired (24 hours), only a new one can continue.
+      if (e.statusCode == 409) {
+        setState(() => _error = 'This quiz has expired. Start a new one.');
+      } else {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.userMessage)));
       }
-    } else {
-      if (mounted) {
-      setState(() {
-        quizCompleted = true;
-      });
-      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
     }
   }
 
-  void _restartQuiz() {
-    if (!mounted) return;
-    
-    if (mounted) {
+  void _next() {
     setState(() {
-      currentQuestionIndex = 0;
-      selectedOptionIndex = null;
-      hasAnswered = false;
-      correctAnswers = 0;
-      quizCompleted = false;
+      _index++;
+      _selected = null;
+      _answer = null;
     });
-    }
-    _shuffleOptions();
-  }
-
-  Future<void> _refreshQuiz() async {
-    if (!mounted) return;
-    
-    if (mounted) {
-    setState(() {
-      currentQuestionIndex = 0;
-      selectedOptionIndex = null;
-      hasAnswered = false;
-      correctAnswers = 0;
-      quizCompleted = false;
-      quizData.clear();
-      allMeanings.clear();
-    });
-    }
-    await _initializeQuiz();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (isLoading) {
-      return _buildLoadingScreen();
-    }
-
-    if (quizCompleted) {
-      return _buildResultsScreen();
-    }
-
-    if (quizData.isEmpty) {
-      return _buildErrorScreen();
-    }
-
-    final currentQuestion = quizData[currentQuestionIndex];
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Quiz'),
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        elevation: 0,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _refreshQuiz,
-            tooltip: 'Refresh Quiz',
+          if (!_loading &&
+              _error == null &&
+              _questions.isNotEmpty &&
+              !_completed)
+            Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Center(
+                child: Text(
+                  '${_score.answered}/${_score.total}',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+      body: _body(),
+    );
+  }
+
+  Widget _body() {
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_error != null) {
+      return MessageView(
+        icon: Icons.error_outline,
+        text: _error!,
+        action: 'Try again',
+        onAction: _start,
+      );
+    }
+    if (_questions.isEmpty) {
+      return const MessageView(
+        icon: Icons.quiz_outlined,
+        text: 'Nothing to practice yet.\nSave some words first.',
+      );
+    }
+    if (_completed) return _results();
+    return _question(_questions[_index]);
+  }
+
+  Widget _question(QuizQuestion q) {
+    final answer = _answer;
+    final total = _score.total == 0 ? 1 : _score.total;
+
+    return SafeArea(
+      top: false,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: ProgressBar(value: _score.answered / total),
+          ),
+          Expanded(
+            // The next question slides in from the right, the answered one
+            // leaves to the left.
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 280),
+              reverseDuration: const Duration(milliseconds: 180),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) {
+                final incoming = child.key == ValueKey(q.id);
+                return FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position: Tween(
+                      begin: Offset(incoming ? 0.15 : -0.15, 0),
+                      end: Offset.zero,
+                    ).animate(animation),
+                    child: child,
+                  ),
+                );
+              },
+              child: ListView(
+                key: ValueKey(q.id),
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+                      child: _prompt(q),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  for (final (i, option) in q.options.indexed)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _OptionTile(
+                        letter: String.fromCharCode(65 + i),
+                        label: option,
+                        // Meaning options are in the user's own language.
+                        language: q.type == 'translation' ? null : _language,
+                        selected: _selected == i,
+                        // Colors only once graded.
+                        correct: answer == null
+                            ? null
+                            : i == answer.correctIndex,
+                        onTap: answer == null && !_submitting
+                            ? () {
+                                HapticFeedback.selectionClick();
+                                setState(() => _selected = i);
+                              }
+                            : null,
+                      ),
+                    ),
+                  if (answer != null) ...[
+                    const SizedBox(height: 8),
+                    _Feedback(answer: answer, type: q.type),
+                  ],
+                ],
+              ),
+            ),
           ),
           Padding(
-            padding: const EdgeInsets.only(right: 16.0),
-            child: Center(
-              child: Text(
-                '${currentQuestionIndex + 1}/$totalQuestions',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.all(16),
+                ),
+                onPressed: answer != null
+                    ? _next
+                    : (_selected != null && !_submitting ? _submit : null),
+                child: Text(
+                  answer == null
+                      ? 'Check'
+                      : (answer.sessionCompleted ? 'See results' : 'Next'),
                 ),
               ),
             ),
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            children: [
-              // TODO: uncomment when API is implemented
-              // Error message
-              // if (errorMessage.isNotEmpty)
-              //   Container(
-              //     width: double.infinity,
-              //     margin: const EdgeInsets.only(bottom: 16.0),
-              //     padding: const EdgeInsets.all(12.0),
-              //     decoration: BoxDecoration(
-              //       color: Colors.orange[100],
-              //       borderRadius: BorderRadius.circular(8.0),
-              //     ),
-              //     child: Row(
-              //       children: [
-              //         Icon(Icons.info, color: Colors.orange[800]),
-              //         const SizedBox(width: 8),
-              //         Expanded(
-              //           child: Text(
-              //             errorMessage,
-              //             style: TextStyle(color: Colors.orange[800]),
-              //           ),
-              //         ),
-              //         TextButton(
-              //           onPressed: () {
-              //             if (mounted) {
-              //               setState(() => errorMessage = '');
-              //             }
-              //           },
-              //           child: const Text('Dismiss'),
-              //         ),
-              //       ],
-              //     ),
-              //   ),
+    );
+  }
 
-              // Progress Bar
-              Card.filled(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Progress',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          Text('${((currentQuestionIndex + 1) / totalQuestions * 100).round()}%'),
-                        ],
-                      ),
-                      const SizedBox(height: 8.0),
-                      LinearProgressIndicator(
-                        value: (currentQuestionIndex + 1) / totalQuestions,
-                        backgroundColor: Theme.of(context).colorScheme.surface,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+  String? get _language => Session.instance.course?.learningLanguage;
+
+  Widget _prompt(QuizQuestion q) {
+    final theme = Theme.of(context);
+    final hint = TextStyle(color: theme.colorScheme.onSurfaceVariant);
+    final big = learned(_language, fontSize: 34, fontWeight: FontWeight.w600);
+
+    return switch (q.type) {
+      'fill_blank' => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Which word fills the blank?', style: hint),
+          const SizedBox(height: 12),
+          Text.rich(
+            _blanked(
+              q.sentence,
+              q.span,
+              revealed: _answer != null,
+              highlight: const TextStyle(backgroundColor: Palette.highlighter),
+            ),
+            style: learned(_language, fontSize: 22, height: 1.7),
+          ),
+        ],
+      ),
+      'reading' => Column(
+        children: [
+          Text('How is this word read?', style: hint),
+          const SizedBox(height: 12),
+          Text(q.dictForm, style: big, textAlign: TextAlign.center),
+        ],
+      ),
+      _ => Column(
+        children: [
+          Text('What does this word mean?', style: hint),
+          const SizedBox(height: 12),
+          Text(q.dictForm, style: big, textAlign: TextAlign.center),
+          if (q.reading.isNotEmpty && q.reading != q.dictForm)
+            Text(
+              q.reading,
+              style: learned(
+                _language,
+                fontSize: 17,
+                color: theme.colorScheme.onSurfaceVariant,
               ),
-              
-              const SizedBox(height: 16.0),
-              
-              // Question Card
-              Card.filled(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Word
-                      Text(
-                        'What does this word mean?',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-                        ),
-                      ),
-                      const SizedBox(height: 8.0),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16.0),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surface,
-                          borderRadius: BorderRadius.circular(8.0),
-                        ),
-                        child: Text(
-                          currentQuestion.word,
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                      
-                      const SizedBox(height: 16.0),
-                      
-                      // Reading (the sentence field holds it)
-                      if (currentQuestion.sentence.isNotEmpty) ...[
-                        Text(
-                          'Reading:',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-                          ),
-                        ),
-                        const SizedBox(height: 8.0),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12.0),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.surface,
-                            borderRadius: BorderRadius.circular(8.0),
-                            border: Border.all(
-                              color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
-                            ),
-                          ),
-                          child: Text(
-                            currentQuestion.sentence,
-                            style: const TextStyle(fontSize: 16),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
+            ),
+        ],
+      ),
+    };
+  }
+
+  /// [sentence] with the runes at [span] replaced by a blank, until
+  /// [revealed], then set in [highlight].
+  static TextSpan _blanked(
+    String sentence,
+    Span? span, {
+    required bool revealed,
+    required TextStyle highlight,
+  }) {
+    final runes = sentence.runes.toList();
+    if (span == null ||
+        span.$1 < 0 ||
+        span.$1 >= span.$2 ||
+        span.$2 > runes.length) {
+      return TextSpan(text: sentence);
+    }
+    final before = String.fromCharCodes(runes.sublist(0, span.$1));
+    final word = String.fromCharCodes(runes.sublist(span.$1, span.$2));
+    final after = String.fromCharCodes(runes.sublist(span.$2));
+    return TextSpan(
+      children: [
+        TextSpan(text: before),
+        revealed
+            ? TextSpan(text: word, style: highlight)
+            // One unbreakable slot, so the blank never wraps on its own.
+            : const WidgetSpan(
+                alignment: PlaceholderAlignment.baseline,
+                baseline: TextBaseline.alphabetic,
+                child: Text('\u00A0＿＿＿\u00A0'),
               ),
-              
-              const SizedBox(height: 16.0),
-              
-              // Options
-              ...currentQuestion.options.asMap().entries.map((entry) {
-                final index = entry.key;
-                final option = entry.value;
-                final isSelected = selectedOptionIndex == index;
-                final isCorrect = option == currentQuestion.correctAnswer;
-                
-                Color? cardColor;
-                if (hasAnswered) {
-                  if (isCorrect) {
-                    cardColor = Colors.green.withOpacity(0.2);
-                  } else if (isSelected && !isCorrect) {
-                    cardColor = Colors.red.withOpacity(0.2);
-                  }
-                }
-                
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8.0),
-                  child: Card.filled(
-                    color: cardColor ?? (isSelected 
-                        ? Theme.of(context).colorScheme.primary.withOpacity(0.2)
-                        : Theme.of(context).colorScheme.primaryContainer),
-                    child: InkWell(
-                      onTap: () => _selectOption(index),
-                      borderRadius: BorderRadius.circular(12.0),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 24,
-                              height: 24,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: isSelected 
-                                    ? Theme.of(context).colorScheme.primary
-                                    : Theme.of(context).colorScheme.surface,
-                                border: Border.all(
-                                  color: Theme.of(context).colorScheme.outline,
-                                ),
-                              ),
-                              child: isSelected
-                                  ? Icon(
-                                      Icons.check,
-                                      size: 16,
-                                      color: Theme.of(context).colorScheme.onPrimary,
-                                    )
-                                  : null,
+        TextSpan(text: after),
+      ],
+    );
+  }
+
+  Widget _results() {
+    return ScoreView(
+      title: 'Quiz complete',
+      correct: _score.correct,
+      total: _score.total,
+      caption: 'answered correctly',
+      action: 'New quiz',
+      onAction: _start,
+    );
+  }
+}
+
+const _success = Palette.leaf;
+const _successContainer = Palette.leafWash;
+
+class _OptionTile extends StatelessWidget {
+  const _OptionTile({
+    required this.letter,
+    required this.label,
+    required this.language,
+    required this.selected,
+    required this.correct,
+    required this.onTap,
+  });
+
+  final String letter;
+  final String label;
+
+  /// Set when [label] is in the language being learned.
+  final String? language;
+  final bool selected;
+
+  /// Null until graded.
+  final bool? correct;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final graded = correct != null;
+    final wrong = correct == false && selected;
+
+    final (
+      Color fill,
+      Color edge,
+      Color badge,
+      Color onBadge,
+    ) = switch (correct) {
+      true => (_successContainer, _success, _success, Palette.raised),
+      false when selected => (
+        scheme.errorContainer,
+        scheme.error,
+        scheme.error,
+        scheme.onError,
+      ),
+      // Yellow is for words; a picked option is marked in ink.
+      _ when selected => (
+        scheme.surfaceContainerLowest,
+        scheme.primary,
+        scheme.primary,
+        scheme.onPrimary,
+      ),
+      _ => (
+        scheme.surfaceContainerLowest,
+        scheme.outlineVariant,
+        scheme.surfaceContainerHighest,
+        scheme.onSurfaceVariant,
+      ),
+    };
+    final emphasized = selected || correct == true;
+    final edgeWidth = emphasized ? 2.0 : 1.0;
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(12),
+      side: BorderSide(color: edge, width: edgeWidth),
+    );
+
+    return AnimatedOpacity(
+      // Once graded, the options that don't matter step back.
+      opacity: graded && !emphasized ? 0.7 : 1,
+      duration: const Duration(milliseconds: 200),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        decoration: ShapeDecoration(color: fill, shape: shape),
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            onTap: onTap,
+            customBorder: shape,
+            child: Padding(
+              // Absorbs the thicker edge, so the content doesn't shift.
+              padding: EdgeInsets.symmetric(
+                horizontal: 13 - edgeWidth,
+                vertical: 15 - edgeWidth,
+              ),
+              child: Row(
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: 32,
+                    height: 32,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: badge,
+                      shape: BoxShape.circle,
+                    ),
+                    child: correct == true
+                        ? Icon(Icons.check, size: 20, color: onBadge)
+                        : wrong
+                        ? Icon(Icons.close, size: 20, color: onBadge)
+                        : Text(
+                            letter,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: onBadge,
                             ),
-                            const SizedBox(width: 12.0),
-                            Expanded(
-                              child: Text(
-                                '${String.fromCharCode(65 + index)}. $option',
-                                style: const TextStyle(fontSize: 16),
-                              ),
-                            ),
-                            if (hasAnswered && isCorrect)
-                              const Icon(
-                                Icons.check_circle,
-                                color: Colors.green,
-                              ),
-                          ],
-                        ),
-                      ),
+                          ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: language == null
+                          ? const TextStyle(fontSize: 16)
+                          : learned(language, fontSize: 18),
                     ),
                   ),
-                );
-              }),
-              
-              const SizedBox(height: 16.0),
-              
-              // Action Button
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: hasAnswered 
-                      ? _nextQuestion 
-                      : (selectedOptionIndex != null ? _submitAnswer : null),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.all(16.0),
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                  ),
-                  child: Text(
-                    hasAnswered 
-                        ? (currentQuestionIndex < quizData.length - 1 ? 'NEXT' : 'FINISH')
-                        : 'SUBMIT',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
+}
 
-  Widget _buildLoadingScreen() {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Quiz'),
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        elevation: 0,
-      ),
-      body: const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Loading quiz questions...'),
-          ],
+/// The verdict, plus what the options didn't already show: the vocab for
+/// reading and fill in the blank questions, and the sentence's meaning.
+class _Feedback extends StatelessWidget {
+  const _Feedback({required this.answer, required this.type});
+
+  final QuizAnswer answer;
+  final String type;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final a = answer;
+    final color = a.correct ? _success : scheme.error;
+    final showVocab = type != 'translation';
+    final sentence = a.sentenceTranslation ?? '';
+    final bare = !showVocab && sentence.isEmpty;
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      builder: (context, t, child) => Opacity(
+        opacity: t,
+        child: Transform.translate(
+          offset: Offset(0, 8 * (1 - t)),
+          child: child,
         ),
       ),
-    );
-  }
-
-  Widget _buildErrorScreen() {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Quiz'),
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        elevation: 0,
-      ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.quiz,
-                size: 64,
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+      // Just the verdict needs no box around it.
+      child: Container(
+        padding: bare
+            ? const EdgeInsets.symmetric(horizontal: 4, vertical: 4)
+            : const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: bare ? null : scheme.surfaceContainer,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  a.correct ? Icons.check_circle : Icons.cancel,
+                  size: 20,
+                  color: color,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  a.correct ? 'Correct' : 'Not quite',
+                  style: theme.textTheme.titleSmall?.copyWith(color: color),
+                ),
+              ],
+            ),
+            if (showVocab) ...[
+              const SizedBox(height: 12),
+              Text(
+                a.reading.isNotEmpty && a.reading != a.dictForm
+                    ? '${a.dictForm} · ${a.reading}'
+                    : a.dictForm,
+                style: learned(
+                  Session.instance.course?.learningLanguage,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-              const SizedBox(height: 16),
-              const Text(
-                'No quiz questions available',
-                style: TextStyle(fontSize: 18),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _refreshQuiz,
-                child: const Text('Try Again'),
+              const SizedBox(height: 2),
+              Text(a.translation, style: theme.textTheme.bodyLarge),
+            ],
+            if (sentence.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                sentence,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildResultsScreen() {
-    final percentage = totalQuestions > 0 ? (correctAnswers / totalQuestions * 100).round() : 0;
-    
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Quiz Results'),
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        elevation: 0,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Card.filled(
-              color: Theme.of(context).colorScheme.primaryContainer,
-              child: Padding(
-                padding: const EdgeInsets.all(32.0),
-                child: Column(
-                  children: [
-                    Icon(
-                      percentage >= 70 ? Icons.celebration : Icons.thumb_up,
-                      size: 64,
-                      color: percentage >= 70 ? Colors.green : Theme.of(context).colorScheme.primary,
-                    ),
-                    const SizedBox(height: 16.0),
-                    const Text(
-                      'Quiz Completed!',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 16.0),
-                    Text(
-                      'Your Score',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-                      ),
-                    ),
-                    Text(
-                      '$correctAnswers/$totalQuestions',
-                      style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                    Text(
-                      '$percentage%',
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            
-            const SizedBox(height: 32.0),
-            
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _restartQuiz,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.all(16.0),
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                ),
-                child: const Text(
-                  'TAKE QUIZ AGAIN',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-            
-            const SizedBox(height: 8.0),
-            
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _refreshQuiz,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.all(16.0),
-                ),
-                child: const Text(
-                  'NEW QUIZ',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-            
-            const SizedBox(height: 8.0),
-            
-            SizedBox(
-              width: double.infinity,
-              child: TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text(
-                  'BACK TO HOME',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
           ],
         ),
       ),

@@ -4,6 +4,7 @@ import 'package:lingua_screen/overlay/activation_overlay.dart';
 import 'package:lingua_screen/pages/login_page.dart';
 import 'package:lingua_screen/pages/course_page.dart';
 import 'package:lingua_screen/pages/splash_screen.dart';
+import 'package:lingua_screen/theme.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 Future main() async {
@@ -36,10 +37,7 @@ class _MyAppState extends State<MyApp> {
     super.initState();
   }
 
-  final ThemeData appTheme = ThemeData(
-    useMaterial3: true,
-    colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-  );
+  final ThemeData appTheme = buildTheme();
 
   @override
   Widget build(BuildContext context) {

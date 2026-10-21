@@ -250,6 +250,50 @@ class ApiClient {
     await _send('DELETE', '/vocabs/${Uri.encodeComponent(vocabId)}');
   }
 
+  // --- practice -----------------------------------------------------------
+
+  /// Resumes the course's open quiz, or starts a new one. No questions means
+  /// there is nothing to practice.
+  Future<QuizSession> startQuiz(String courseId) async {
+    final json = await _send(
+      'POST',
+      '/quiz/start',
+      body: {'course_id': courseId},
+    );
+    return QuizSession.fromJson(json);
+  }
+
+  /// Grades one answer. Resubmitting returns the stored result unchanged.
+  Future<QuizAnswer> submitQuiz(String questionId, int optionIndex) async {
+    final json = await _send(
+      'POST',
+      '/quiz/submit',
+      body: {'question_id': questionId, 'option_index': optionIndex},
+    );
+    return QuizAnswer.fromJson(json);
+  }
+
+  Future<List<FlashCard>> startFlashCards(String courseId) async {
+    final json = await _send(
+      'POST',
+      '/flash-card/start',
+      body: {'course_id': courseId},
+    );
+    return [
+      for (final c in json['cards'] as List? ?? const [])
+        FlashCard.fromJson(c as Map<String, dynamic>),
+    ];
+  }
+
+  /// Records the user's self-grade of a card.
+  Future<void> submitFlashCard(String vocabId, {required bool correct}) async {
+    await _send(
+      'POST',
+      '/flash-card/submit',
+      body: {'vocab_id': vocabId, 'correct': correct},
+    );
+  }
+
   // --- transport ----------------------------------------------------------
 
   /// Sends a JSON request and returns the decoded JSON object (empty for 204).
