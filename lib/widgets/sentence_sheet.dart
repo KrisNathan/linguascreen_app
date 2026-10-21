@@ -358,8 +358,9 @@ class _SentenceSheetState extends State<SentenceSheet> {
                 ),
               ),
               TextButton(
-                onPressed: () =>
-                    setState(() => _explanations.remove(analysis.sentence)),
+                onPressed: () => setState(() {
+                  _explanations.remove(analysis.sentence);
+                }),
                 child: const Text('Retry'),
               ),
             ],

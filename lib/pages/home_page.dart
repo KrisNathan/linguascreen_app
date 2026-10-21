@@ -79,7 +79,9 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _refresh() async {
     final next = _loadExcerpts();
-    setState(() => _excerpts = next);
+    setState(() {
+      _excerpts = next;
+    });
     await next.catchError((_) => <_Excerpt>[]);
   }
 
