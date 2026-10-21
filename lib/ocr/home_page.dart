@@ -46,6 +46,8 @@ class _HomePageState extends State<HomePage> {
                     selStart: _ocr.selStart,
                     selEnd: _ocr.selEnd,
                     onPick: (unit) => _ocr.select(unit, unit),
+                    onAdjust: _ocr.select,
+                    onAdjustEnd: () {},
                   ),
                 ),
               if (_ocr.isBusy) const LinearProgressIndicator(),

@@ -39,6 +39,10 @@ class _SentenceSheetState extends State<SentenceSheet> {
   int? _token;
   int? _part;
 
+  /// The sentence [_token] and [_part] belong to. The sheet stays open while
+  /// another sentence is picked or the selection is adjusted.
+  SentenceState? _shown;
+
   SentenceReader get _reader => widget.reader;
 
   @override
@@ -51,6 +55,11 @@ class _SentenceSheetState extends State<SentenceSheet> {
         listenable: _reader,
         builder: (context, _) {
           final sentence = _reader.sentence;
+          if (!identical(sentence, _shown)) {
+            _shown = sentence;
+            _token = null;
+            _part = null;
+          }
           return ListView(
             controller: widget.scrollController,
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),

@@ -3,13 +3,14 @@ import 'package:lingua_screen/ocr/page_text.dart';
 import 'package:lingua_screen/theme.dart';
 
 import 'image_transform.dart';
+import 'selection_handles.dart';
 
 /// A darker amber than the highlighter, so outlines show on light and
 /// dark screenshots alike.
 const _edge = Color(0xFFA8820F);
 
 /// Draws everything on top of the image, back to front:
-/// sentence outlines, then the selected sentence.
+/// sentence outlines, then the selected sentence and its handles.
 class OcrPainter extends CustomPainter {
   final PageText page;
   final Size imageSize;
@@ -85,6 +86,14 @@ class OcrPainter extends CustomPainter {
 
     for (final rect in page.rectsFor(start, end)) {
       canvas.drawRRect(_rounded(t, rect, inflate: 2, radius: 8), paint);
+    }
+
+    final (startHandle, endHandle) = handleCenters(page, start, end, t);
+    final ring = Paint()..color = Colors.white;
+    final dot = Paint()..color = _edge;
+    for (final c in [startHandle, endHandle]) {
+      canvas.drawCircle(c, 9, ring);
+      canvas.drawCircle(c, 6.5, dot);
     }
   }
 

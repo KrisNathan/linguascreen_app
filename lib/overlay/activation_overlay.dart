@@ -4,6 +4,7 @@ import 'dart:isolate';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:lingua_screen/theme.dart';
 
@@ -89,9 +90,14 @@ class _ActivationOverlayState extends State<ActivationOverlay> {
       _away = away;
     });
     // An invisible window would still swallow taps meant for the app.
-    await FlutterOverlayWindow.updateFlag(
-      away ? OverlayFlag.clickThrough : OverlayFlag.defaultFlag,
-    );
+    try {
+      await FlutterOverlayWindow.updateFlag(
+        away ? OverlayFlag.clickThrough : OverlayFlag.defaultFlag,
+      );
+    } on MissingPluginException {
+      // The plugin runs this isolate from app start but only answers once
+      // the window is shown. No window, no taps to let through.
+    }
   }
 
   Future<void> _activate() async {

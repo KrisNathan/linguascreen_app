@@ -2,6 +2,7 @@ import 'dart:developer';
 
 import 'package:flutter/material.dart';
 import 'package:lingua_screen/api/api_client.dart';
+import 'package:lingua_screen/api/models.dart';
 import 'package:lingua_screen/ocr/loaded_image.dart';
 import 'package:lingua_screen/ocr/ocr_controller.dart';
 import 'package:lingua_screen/ocr/widgets/ocr_canvas.dart';
@@ -9,8 +10,9 @@ import 'package:lingua_screen/ocr/sentence_reader.dart';
 import 'package:lingua_screen/session.dart';
 import 'package:lingua_screen/widgets/sentence_sheet.dart';
 
-/// Reads a screenshot on device. Tapping a sentence opens a popup with its
-/// translation and words.
+/// Reads a screenshot on device. Tapping a sentence opens a sheet with its
+/// translation and words; dragging the selection handles changes what is
+/// translated. The sheet is not modal, so the image stays usable under it.
 class OCRPage extends StatefulWidget {
   final String imagePath;
 
@@ -29,6 +31,11 @@ class _OCRPageState extends State<OCRPage> {
   );
 
   bool _loadFailed = false;
+
+  static const _sheetInitialSize = 0.45;
+
+  /// How much of the body the sentence sheet covers, as it is dragged.
+  double _sheetSize = _sheetInitialSize;
 
   @override
   void initState() {
@@ -67,8 +74,40 @@ class _OCRPageState extends State<OCRPage> {
           ? const _Message('Choose a course first.')
           : ListenableBuilder(
               listenable: Listenable.merge([_ocr, _reader]),
-              builder: (context, _) => _canvas(),
+              builder: (context, _) => PopScope(
+                // back closes the sheet first
+                canPop: _reader.sentence == null,
+                onPopInvokedWithResult: (didPop, _) {
+                  if (!didPop) _reader.clear();
+                },
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _canvas(),
+                    if (_reader.sentence != null) _sheet(course),
+                  ],
+                ),
+              ),
             ),
+    );
+  }
+
+  Widget _sheet(Course course) {
+    return NotificationListener<DraggableScrollableNotification>(
+      onNotification: (n) {
+        setState(() => _sheetSize = n.extent);
+        return false;
+      },
+      child: DraggableScrollableSheet(
+        initialChildSize: _sheetInitialSize,
+        minChildSize: 0.25,
+        maxChildSize: 0.9,
+        builder: (context, scrollController) => SentenceSheet(
+          reader: _reader,
+          course: course,
+          scrollController: scrollController,
+        ),
+      ),
     );
   }
 
@@ -88,32 +127,20 @@ class _OCRPageState extends State<OCRPage> {
       page: _ocr.page,
       selStart: _ocr.selStart,
       selEnd: _ocr.selEnd,
-      onPick: _pick,
+      onPick: (unit) {
+        // a reopened sheet starts at its initial size again
+        if (_reader.sentence == null) _sheetSize = _sheetInitialSize;
+        _reader.pick(unit);
+      },
+      coveredFraction: _reader.sentence == null ? 0 : _sheetSize,
+      // live highlight only; analyzed once the handle is let go
+      onAdjust: _ocr.select,
+      onAdjustEnd: () {
+        final start = _ocr.selStart;
+        final end = _ocr.selEnd;
+        if (start != null && end != null) _reader.selectRange(start, end);
+      },
     );
-  }
-
-  void _pick(int? unit) {
-    _reader.pick(unit);
-    if (_reader.sentence == null) return;
-
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      // keep the selected sentence visible above the sheet
-      barrierColor: Colors.black26,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.45,
-        minChildSize: 0.25,
-        maxChildSize: 0.9,
-        expand: false,
-        builder: (context, scrollController) => SentenceSheet(
-          reader: _reader,
-          course: _course!,
-          scrollController: scrollController,
-        ),
-      ),
-    ).whenComplete(_reader.clear);
   }
 }
 

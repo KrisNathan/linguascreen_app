@@ -1,4 +1,3 @@
-
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
 abstract class ScriptRules {
@@ -7,6 +6,9 @@ abstract class ScriptRules {
 
   /// In vertical text, do the columns run right to left? (Japanese, Chinese)
   bool get verticalColumnsRightToLeft;
+
+  /// Can small reading aids (furigana) sit next to the base text?
+  bool get hasRuby;
 
   /// get sentence containing [offset] then return sentence's start and end index in [text]
   /// [offset] is an index in [text]
@@ -28,6 +30,9 @@ class LatinScriptRules implements ScriptRules {
   bool get verticalColumnsRightToLeft {
     return false; // never vertical (canBeVertical is false), so unused
   }
+
+  @override
+  bool get hasRuby => false;
 
   @override
   (int, int) sentenceRange(String text, int offset) {
@@ -53,6 +58,9 @@ class CjkScriptRules implements ScriptRules {
   bool get verticalColumnsRightToLeft => true;
 
   @override
+  bool get hasRuby => true;
+
+  @override
   (int, int) sentenceRange(String text, int offset) {
     return findSentenceRange(
       text,
@@ -72,7 +80,6 @@ ScriptRules rulesFor(TextRecognitionScript script) => switch (script) {
   TextRecognitionScript.chinese ||
   TextRecognitionScript.japanese => CjkScriptRules(),
 };
-
 
 /// Shared sentence algorithm; scripts only differ in their [enders] and
 /// [closers]. Returns [start, end) of the sentence containing [offset].

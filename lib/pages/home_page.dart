@@ -115,7 +115,9 @@ class _HomePageState extends State<HomePage> {
         enableDrag: true,
         overlayTitle: 'Overlay',
         overlayContent: 'Overlay Enabled',
-        flag: OverlayFlag.defaultFlag,
+        // The app is in front, so the button starts away and lets taps
+        // through; it turns touchable once the user leaves the app.
+        flag: OverlayFlag.clickThrough,
         visibility: NotificationVisibility.visibilityPublic,
         positionGravity: PositionGravity.none,
         height: 150,

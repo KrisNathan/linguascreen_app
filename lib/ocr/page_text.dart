@@ -47,10 +47,15 @@ class PageText {
     return byLine.values.toList();
   }
 
+  /// The text of units [first]..[last]. A selection made by hand may span
+  /// regions; their '\n' becomes a space, or nothing in scripts without
+  /// spaces.
   String textFor(int first, int last) {
     final a = units[first];
     final b = units[last];
-    return text.substring(a.offset, b.offset + b.char.length);
+    return text
+        .substring(a.offset, b.offset + b.char.length)
+        .replaceAll('\n', scriptRules.needsSpace ? ' ' : '');
   }
 
   (int, int) sentenceSpan(int firstUnit, int lastUnit) {
@@ -223,6 +228,26 @@ class Region {
     return sqrt(dx * dx + dy * dy);
   }
 
+  /// Are [a] and [b] neighbouring lines of one paragraph: same orientation,
+  /// side by side across the reading direction, and overlapping along it?
+  /// Such lines may be further apart (wide line spacing) than other text.
+  static bool isStacked(Rect a, Rect b, double maxGap) {
+    final aVertical = a.height > a.width;
+    if (aVertical != b.height > b.width) return false;
+
+    final double overlap, shorter, gap;
+    if (aVertical) {
+      overlap = min(a.bottom, b.bottom) - max(a.top, b.top);
+      shorter = min(a.height, b.height);
+      gap = max(a.left - b.right, b.left - a.right);
+    } else {
+      overlap = min(a.right, b.right) - max(a.left, b.left);
+      shorter = min(a.width, b.width);
+      gap = max(a.top - b.bottom, b.top - a.bottom);
+    }
+    return overlap > shorter * 0.5 && gap < maxGap;
+  }
+
   static bool getIsVertical(List<TextLine> lines) {
     var verticalCount = 0;
     var horizontalCount = 0;
@@ -247,6 +272,7 @@ class Region {
     ScriptRules rules,
   ) {
     final threshold = medianThickness * 1;
+    final stackedThreshold = medianThickness * 2;
 
     List<int> lineGroupIds = lines.indexed.map((pair) => pair.$1).toList();
     HashMap<int, List<TextLine>> groups = HashMap();
@@ -264,7 +290,8 @@ class Region {
         var a = lines[aId];
         var b = lines[bId];
 
-        if (getGap(a.boundingBox, b.boundingBox) < threshold) {
+        if (getGap(a.boundingBox, b.boundingBox) < threshold ||
+            isStacked(a.boundingBox, b.boundingBox, stackedThreshold)) {
           int from = lineGroupIds[bId];
           int to = lineGroupIds[aId];
 
@@ -379,15 +406,62 @@ class PageTextFactory {
     });
   }
 
+  static final _kanaOnly = RegExp(r'^[\u3040-\u30FF\s]+$');
+
+  /// Is [ruby] a furigana line hugging [base]? Horizontal ruby sits just
+  /// above the base line, vertical ruby just right of the base column.
+  bool _isRubyOf(Rect ruby, Rect base) {
+    final rubyThickness = min(ruby.width, ruby.height);
+    final baseThickness = min(base.width, base.height);
+    if (rubyThickness > baseThickness * 0.7) return false;
+
+    final baseVertical = base.height > base.width;
+    if (baseVertical) {
+      final c = ruby.center.dy;
+      return c > base.top &&
+          c < base.bottom &&
+          ruby.left > base.right - baseThickness * 0.3 &&
+          ruby.left < base.right + baseThickness * 0.5;
+    }
+    final c = ruby.center.dx;
+    return c > base.left &&
+        c < base.right &&
+        ruby.bottom > base.top - baseThickness * 0.5 &&
+        ruby.bottom < base.top + baseThickness * 0.3;
+  }
+
+  /// Furigana lines, which must not be read as part of the text.
+  Set<TextLine> _rubyLines(List<TextLine> lines) {
+    return {
+      for (final line in lines)
+        if (_kanaOnly.hasMatch(line.text) &&
+            lines.any(
+              (base) =>
+                  !identical(base, line) &&
+                  _isRubyOf(line.boundingBox, base.boundingBox),
+            ))
+          line,
+    };
+  }
+
   PageText? build(RecognizedText recognizedText, ScriptRules rules) {
     final List<TextLine> lines = [
       for (final block in recognizedText.blocks) ...block.lines,
     ];
-    if (lines.isEmpty) return null;
+    final ruby = rules.hasRuby ? _rubyLines(lines) : <TextLine>{};
+    final textLines = lines.where((l) => !ruby.contains(l)).toList();
+    if (textLines.isEmpty) return null;
 
-    double medianThickness = _getMedianThickness(lines);
+    // Furigana would drag the median down to their own size.
+    double medianThickness = _getMedianThickness(textLines);
 
+    // Group with furigana still in: they sit in the line spacing and bridge
+    // widely spaced lines of the same paragraph. Drop them afterwards.
     List<Region> regions = Region.groupLines(lines, medianThickness, rules);
+    for (final region in regions) {
+      region.lines.removeWhere(ruby.contains);
+    }
+    regions.removeWhere((r) => r.lines.isEmpty);
     for (final region in regions) {
       region.orderLines(); // lines inside each region
     }

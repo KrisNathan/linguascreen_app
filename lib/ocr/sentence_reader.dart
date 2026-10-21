@@ -6,7 +6,7 @@ import 'page_text.dart';
 
 enum AnalysisStatus { idle, loading, ready, failed }
 
-/// One sentence of the page and its analysis.
+/// One sentence of the page (or a range picked by hand) and its analysis.
 class SentenceState {
   /// The sentence's units, inclusive.
   final (int, int) units;
@@ -22,8 +22,9 @@ class SentenceState {
 /// Sentence selection on top of an [OcrController].
 ///
 /// Picking a unit selects its whole sentence (mirrored into the controller's
-/// selection, so [OCRCanvas] draws it) and has it analyzed. Analyses are kept
-/// per page, so picking a sentence again costs nothing.
+/// selection, so [OCRCanvas] draws it) and has it analyzed. [selectRange]
+/// does the same for any range, for when the guessed sentence is wrong.
+/// Analyses are kept per page, so picking a sentence again costs nothing.
 class SentenceReader extends ChangeNotifier {
   SentenceReader({required this.ocr, required this.analyze}) {
     ocr.addListener(_onOcrChanged);
@@ -32,7 +33,7 @@ class SentenceReader extends ChangeNotifier {
   final OcrController ocr;
   final Future<Analysis> Function(String sentence) analyze;
 
-  final Map<int, SentenceState> _sentences = {}; // by first unit
+  final Map<(int, int), SentenceState> _sentences = {}; // by units
   PageText? _page;
 
   /// The page's sentences, the same ones [OCRCanvas] outlines.
@@ -54,7 +55,15 @@ class SentenceReader extends ChangeNotifier {
       (s) => s.$1 <= unit && unit <= s.$2,
       orElse: () => page.sentenceUnitSpan(unit, unit),
     );
-    final state = _sentences[first] ??= SentenceState(
+    selectRange(first, last);
+  }
+
+  /// Selects units [first]..[last] (inclusive) and has them analyzed.
+  void selectRange(int first, int last) {
+    final page = ocr.page;
+    if (page == null) return;
+
+    final state = _sentences[(first, last)] ??= SentenceState(
       units: (first, last),
       text: page.textFor(first, last),
     );
